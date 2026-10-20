@@ -166,14 +166,16 @@ Subcommands:
      same kernel does not cause a daily commit.
 
   Prints one line per change (used as the commit message body).
-- `plan --matrix F --manifest F [--pubkey PEM] [--pr-base REF --pr-title T] [--github-output]`:
-  build items as JSON (each carries its pin and phantun fields, an `id` such as
+- `plan --matrix F --manifest F [--pubkey PEM] [--index HTML] [--pr-base REF --pr-title T]
+  [--github-output]`: build items as JSON (each carries its pin and phantun fields, an `id` such as
   `release-25.12.6-mediatek-filogic` or `snapshot-x86-64`, and `smoke` for `x86/64`).
   - Non-PR: every non-null release pin and (if enabled) snapshot pin whose
     (channel, version, target, kernel, phantun version, pkg_release) is not in the manifest.
-    `publish` is true when there are items, the retention dry-run would prune something, or the
+    `publish` is true when there are items, the retention dry-run would prune something, the
     manifest's `pubkey_sha256` is not the sha256 of `--pubkey` (default
-    `keys/phantun-openwrt.pem`): key rotation, or a feed published before APKs were signed.
+    `keys/phantun-openwrt.pem`: key rotation, or a feed published before APKs were signed), or the
+    published `--index` differs from what `publish.py` renders from the manifest (page template
+    changed).
   - PR (`--pr-base`): targets added or with changed pins → newest listed point release of every
     series (+ SNAPSHOT if enabled); recipe or `build-one.sh` changed → every target for the newest
     point release + SNAPSHOT for `mediatek/filogic` and `x86/64`; otherwise nothing. Never

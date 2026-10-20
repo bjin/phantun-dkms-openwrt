@@ -23,6 +23,7 @@ from common import (  # noqa: E402
     entry_key, fetch_release_targets, fetch_versions, http_get, load_json, log, notice, pin_equal,
     retention, series_of, sha256_file, version_key, write_github_output,
 )
+from publish import render_index  # noqa: E402
 
 DEFAULT_MATRIX = REPO_ROOT / "matrix.json"
 TOP_KEYS = {"schema", "phantun", "policy", "targets", "snapshot_exclude", "releases", "snapshot"}
@@ -573,7 +574,11 @@ def cmd_plan(args) -> int:
         resign = bool(entries) and manifest.get("pubkey_sha256") != sha256_file(Path(args.pubkey))
         if resign:
             log("would re-sign every APK and index: manifest.json pubkey_sha256 != --pubkey")
-        publish = bool(items) or bool(deleted) or resign
+        stale_page = bool(args.index) and bool(entries) and Path(args.index).read_text() != render_index(
+            entries, sha256_file(Path(args.pubkey)))
+        if stale_page:
+            log("would regenerate index.html: it differs from what publish.py renders")
+        publish = bool(items) or bool(deleted) or resign or stale_page
     if len(items) > MAX_ITEMS:
         raise Fatal(f"{len(items)} build items > {MAX_ITEMS}")
     for it in items:
@@ -614,6 +619,7 @@ def main() -> int:
     p.add_argument("--matrix", default=str(DEFAULT_MATRIX))
     p.add_argument("--manifest", required=True)
     p.add_argument("--pubkey", default=str(APK_PUBKEY), help="public key the feed must be signed with")
+    p.add_argument("--index", help="published index.html; publish when publish.py would render it differently")
     p.add_argument("--pr-base", help="git ref of the PR base (PR mode)")
     p.add_argument("--pr-title", help="PR title (default: $PR_TITLE)")
     p.add_argument("--github-output", action="store_true", help="also write items/count/publish to $GITHUB_OUTPUT")

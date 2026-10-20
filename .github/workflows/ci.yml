@@ -107,15 +107,17 @@ jobs:
         with:
           ref: ${{ needs.bump.outputs.sha || github.sha }}
           fetch-depth: 0
-      - name: Fetch published manifest
+      - name: Fetch published manifest and index
         run: |
           if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
             git fetch --no-tags --depth 1 origin gh-pages
             git show FETCH_HEAD:manifest.json > "$RUNNER_TEMP/manifest.json"
+            git show FETCH_HEAD:index.html > "$RUNNER_TEMP/index.html"
           else
             rc=$?
             [ "$rc" = 2 ] || exit "$rc"
             echo '{"entries":[]}' > "$RUNNER_TEMP/manifest.json"
+            : > "$RUNNER_TEMP/index.html"
           fi
       - name: Plan
         id: plan
@@ -134,7 +136,7 @@ jobs:
           else
             python3 scripts/matrix.py validate --complete
             python3 scripts/matrix.py plan --matrix matrix.json \
-              --manifest "$RUNNER_TEMP/manifest.json" --github-output
+              --manifest "$RUNNER_TEMP/manifest.json" --index "$RUNNER_TEMP/index.html" --github-output
           fi
 
   build:

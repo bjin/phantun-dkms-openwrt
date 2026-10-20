@@ -189,7 +189,7 @@ sed -nE "s#^.*/((releases|snapshots)/.*/kmods/[^/]+/packages\\.adb)\\$#$BASE/\\1
 apk update && apk add kmod-phantun
 insmod phantun managed_local_ports=51820   # parameters: see the phantun-dkms README"""
     phv = sorted({(e["phantun_version"], e["pkg_release"]) for e in entries})
-    phs = ", ".join(f"{v}-r{r}" for v, r in phv) or "none"
+    phs = ", ".join(f"{v} (package release r{r})" for v, r in phv) or "none"
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -207,7 +207,10 @@ td, th {{ border: 1px solid #ccc; padding: 0.2em 0.5em; text-align: left; font-s
 <p>Signed apk feeds with the <a href="https://github.com/bjin/phantun-dkms">phantun-dkms</a> kernel
 module for stock OpenWrt firmware (25.12 and later). Built by
 <a href="https://github.com/bjin/phantun-dkms-openwrt">bjin/phantun-dkms-openwrt</a>.
-phantun-dkms package version: {html.escape(phs)}.</p>
+phantun-dkms version: {html.escape(phs)}. Package versions read
+<code>&lt;kernel version&gt;.&lt;phantun-dkms version&gt;-r&lt;package release&gt;</code>; the
+package release only changes when this repository changes how the same phantun-dkms version is
+packaged.</p>
 <h2>Router setup</h2>
 <pre>{html.escape(setup)}</pre>
 <p>The module only installs when the router runs exactly a (version, target, kernel) listed below.
