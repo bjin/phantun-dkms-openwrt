@@ -109,23 +109,32 @@ def verify_signature(apk_bin: str, path: Path, pubkey: Path) -> None:
         run([apk_bin, "--root", root, "verify", str(path.resolve())])
 
 
-def sign_apk(apk_bin: str, src: Path, dest: Path, unsigned_sha256: str, signing_key: Path,
-             pubkey: Path) -> None:
+def apk_content_sha256(apk_bin: str, path: Path) -> str:
+    """sha256 of the APK without signatures and without compression."""
+    with tempfile.TemporaryDirectory() as tmp:
+        bare = Path(tmp, "bare.apk")
+        shutil.copyfile(path, bare)
+        run([apk_bin, "adbsign", "--allow-untrusted", "--reset-signatures", "--compression", "none",
+             str(bare)])
+        if bare.read_bytes()[:4] != b"ADB.":
+            raise Fatal(f"{path}: could not strip signatures and compression")
+        return sha256_file(bare)
+
+
+def sign_apk(apk_bin: str, src: Path, dest: Path, signing_key: Path, pubkey: Path) -> None:
     """Write src to dest carrying exactly one signature, made with signing_key.
 
-    `apk adbsign` exits 0 even when it fails (and may leave a truncated file), so the result is
-    checked instead: it must verify with pubkey alone and, with its signatures removed, be
-    byte-identical to the build output (unsigned_sha256)."""
+    `apk adbsign` recompresses the whole file (the bytes differ when the SDK's zlib differs from
+    ours, e.g. SNAPSHOT) and exits 0 even when it fails, so the result is checked instead: it must
+    verify with pubkey alone and, without signatures and compression, equal src."""
     with tempfile.TemporaryDirectory() as tmp:
-        signed, bare = Path(tmp, "signed.apk"), Path(tmp, "bare.apk")
+        signed = Path(tmp, "signed.apk")
         shutil.copyfile(src, signed)
         run([apk_bin, "adbsign", "--allow-untrusted", "--reset-signatures", "--sign-key",
              str(signing_key), str(signed)])
         verify_signature(apk_bin, signed, pubkey)
-        shutil.copyfile(signed, bare)
-        run([apk_bin, "adbsign", "--allow-untrusted", "--reset-signatures", str(bare)])
-        if sha256_file(bare) != unsigned_sha256:
-            raise Fatal(f"{dest}: signed APK minus signatures is not the build output {unsigned_sha256}")
+        if apk_content_sha256(apk_bin, signed) != apk_content_sha256(apk_bin, src):
+            raise Fatal(f"{dest}: signing changed the APK content")
         shutil.copyfile(signed, dest)
 
 
@@ -259,7 +268,7 @@ def publish(args) -> bool:
         apk, entry = checked_apk(art)
         dest = pages / entry["path"]
         dest.parent.mkdir(parents=True, exist_ok=True)
-        sign_apk(apk_bin, apk, dest, entry["unsigned_sha256"], signing_key, pubkey)
+        sign_apk(apk_bin, apk, dest, signing_key, pubkey)
         entry.update(apk_sha256=sha256_file(dest), apk_size=dest.stat().st_size)
         by_key[entry_key(entry)] = entry
         added.add(entry_key(entry))
@@ -285,7 +294,7 @@ def publish(args) -> bool:
                 raise Fatal(f"{e['path']}: sha256 does not match manifest.json")
             # Schema 1 published the unsigned build output, so apk_sha256 is the unsigned hash.
             e.setdefault("unsigned_sha256", e["apk_sha256"])
-            sign_apk(apk_bin, f, f, e["unsigned_sha256"], signing_key, pubkey)
+            sign_apk(apk_bin, f, f, signing_key, pubkey)
             e.update(apk_sha256=sha256_file(f), apk_size=f.stat().st_size)
             log(f"re-signed {e['path']}")
 

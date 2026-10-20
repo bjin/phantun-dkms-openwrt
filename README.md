@@ -85,7 +85,7 @@ Everything runs in GitHub Actions in this repository; no package is built or sig
 
 Builds are reproducible: the same inputs give a byte-identical package, so you can rebuild one
 yourself and compare it with `unsigned_sha256` in `manifest.json`; the published file is that
-package plus a signature block (see `DEVELOPMENT.md`).
+package with a signature added (see `DEVELOPMENT.md`).
 
 ## Requesting a target
 

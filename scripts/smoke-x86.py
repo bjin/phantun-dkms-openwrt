@@ -75,11 +75,11 @@ def make_payload(apk: Path, apk_bin: str, tmp: Path) -> Path:
     repo = tmp / "repo"
     repo.mkdir()
     (repo / apk.name).write_bytes(apk.read_bytes())
-    # Like publish.py: sign the APK itself, then index it.
+    # Like publish.py: sign the APK itself, then index it. stdout is the result line for CI.
     subprocess.run([apk_bin, "adbsign", "--allow-untrusted", "--sign-key", str(key), apk.name],
-                   cwd=repo, check=True)
+                   cwd=repo, check=True, stdout=sys.stderr)
     subprocess.run([apk_bin, "mkndx", "--allow-untrusted", "--sign", str(key), "--output",
-                    "packages.adb", apk.name], cwd=repo, check=True)
+                    "packages.adb", apk.name], cwd=repo, check=True, stdout=sys.stderr)
     payload = tmp / "payload.tar"
     with tarfile.open(payload, "w", format=tarfile.USTAR_FORMAT) as tf:
         tf.add(repo, arcname="repo")

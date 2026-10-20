@@ -249,8 +249,10 @@ The path suffix equals the router's own `distfeeds.list` kmods line, which is wh
 `manifest.json` (schema 2) = `{"schema", "pubkey_sha256" (sha256 of the PEM everything is signed
 for), "entries"}` with one entry per APK: `channel`, `series` (releases), `version`, `target`,
 `kernel`, `arch`, `version_code`, `phantun_version`, `pkg_release`, `path`, `apk_sha256` and
-`apk_size` (the published, signed file), `unsigned_sha256` (the build output, reproducible: the
-published file minus signatures, `apk adbsign --allow-untrusted --reset-signatures`), `built_at`,
+`apk_size` (the published, signed file), `unsigned_sha256` (the reproducible build output; the
+published file is that APK with a signature added and recompressed by our apk-tools, so its
+content without signatures and compression is identical: `apk adbsign --allow-untrusted
+--reset-signatures --compression none` on both), `built_at`,
 `run_url`. It is the record of what is built (`plan` diffs against it) and, with the orphan
 `gh-pages`, the audit trail.
 
@@ -265,9 +267,10 @@ artifacts (`item.json`, `status`, and on success `build.json` + APK). Steps:
 1. Abort if any **release** item of the run is not `ok` (release publishing is all-or-nothing).
 2. Sign every `ok` APK (sha256 checked against `build.json`, item checked against the plan) into
    place with `apk adbsign --allow-untrusted --reset-signatures --sign-key`; an entry with the same
-   key is replaced. `adbsign` exits 0 even when it fails and may leave a truncated file, so the
-   result is checked instead: `apk --root <tmp> verify` with only our public key in
-   `<tmp>/etc/apk/keys/`, and the file minus signatures must equal the `build.json` sha256.
+   key is replaced. `adbsign` recompresses the whole file (SNAPSHOT SDKs compress differently from
+   our apk-tools, so the bytes change) and exits 0 even when it fails, so the result is checked
+   instead: `apk --root <tmp> verify` with only our public key in `<tmp>/etc/apk/keys/`, and its
+   content without signatures and compression must equal the build output's.
 3. **Retention** (a storage cap, never a reason to build): delete release entries whose
    (phantun version, pkg_release) differs from the matrix, whose series is no longer in
    `matrix.releases`, or whose target is no longer listed; then per series keep only the newest
