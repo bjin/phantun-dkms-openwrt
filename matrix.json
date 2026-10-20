@@ -211,10 +211,10 @@
     },
     "qualcommax/ipq50xx": {
       "sdk": "openwrt-sdk-qualcommax-ipq50xx_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "b180b9aad58314488e4265c5fee90ce2f23e21081744864e926c8a6ea5a13aeb",
-      "kernel": "6.18.55-1-93ef0a8c2e4472ce7c070aeaa733b952",
+      "sdk_sha256": "97ef6e9f2cda873601a48e3fe7fe867a9a66cbd2a44d166d46c0cdca4229f373",
+      "kernel": "6.18.55-1-273381ad63213ff65e4613dec662e2fe",
       "arch": "aarch64_cortex-a53",
-      "version_code": "r37507-4e16c2ed8f"
+      "version_code": "r37526-0d245fdaea"
     },
     "qualcommax/ipq807x": {
       "sdk": "openwrt-sdk-qualcommax-ipq807x_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
@@ -225,10 +225,10 @@
     },
     "ramips/mt7621": {
       "sdk": "openwrt-sdk-ramips-mt7621_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "e55a31c596b407d98894b84e25e7f30e6ccf6b25b96d294b15c0c536dd21453f",
-      "kernel": "6.18.55-1-fca4cbd3125d41f709b09e63bf5f74c4",
+      "sdk_sha256": "fba6c5f670bb924304ce7aeb3ec1dd3373317b7c10d80907bbee2c99bc6fa822",
+      "kernel": "6.18.55-1-2aba2e78465ba3870672ddb79790658f",
       "arch": "mipsel_24kc",
-      "version_code": "r37507-4e16c2ed8f"
+      "version_code": "r37525-102f4eebca"
     },
     "rockchip/armv8": {
       "sdk": "openwrt-sdk-rockchip-armv8_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
