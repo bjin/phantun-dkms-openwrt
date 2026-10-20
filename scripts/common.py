@@ -41,6 +41,10 @@ class Fatal(Exception):
     """Unrecoverable error; the command must fail."""
 
 
+class BadSignature(Fatal):
+    """gpgv rejected upstream's sha256sums: never treated as "not uploaded yet"."""
+
+
 class NotFound(Exception):
     """HTTP 404."""
 
@@ -163,7 +167,7 @@ def gpg_verify(signature: bytes, data: bytes, what: str) -> None:
         r = subprocess.run(["gpgv", "--keyring", str(keyring), str(sig), str(dat)],
                            capture_output=True, text=True)
         if r.returncode != 0:
-            raise Fatal(f"gpgv failed for {what}:\n{r.stderr}")
+            raise BadSignature(f"gpgv failed for {what}:\n{r.stderr}")
 
 
 def parse_sha256sums(text: str) -> dict[str, str]:
@@ -256,6 +260,10 @@ class Upstream:
             raise Inconsistent(f"{what}: {adb} not listed in sha256sums")
         if not http_exists(base + adb):
             raise Inconsistent(f"{what}: {base}{adb} missing")
+        # Upstream uploads release metadata and SDKs separately; a pin whose SDK is not there yet
+        # would fail its release build and so block the whole run's publish.
+        if channel == "release" and not http_exists(base + sdk):
+            raise Inconsistent(f"{what}: {base}{sdk} not uploaded yet")
         if not profiles_signed:
             # Upstream rewrote a release's profiles.json without re-signing sha256sums (25.12.6
             # qualcommax/ipq50xx, 2026-10-20). Accept it only when the signed files confirm its

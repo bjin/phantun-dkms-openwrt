@@ -19,9 +19,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import (  # noqa: E402
     APK_PUBKEY, KERNEL_RE, MAX_ITEMS, MIN_SERIES, PHANTUN_VERSION_RE, PIN_FIELDS, POINT_RE,
-    REPO_ROOT, SCHEMA, SERIES_RE, SHA256_RE, TARGET_RE, Fatal, NotFound, Upstream, dump_matrix,
-    entry_key, fetch_release_targets, fetch_versions, http_get, load_json, log, notice, pin_equal,
-    retention, series_of, sha256_file, version_key, write_github_output,
+    REPO_ROOT, SCHEMA, SERIES_RE, SHA256_RE, TARGET_RE, BadSignature, Fatal, NotFound, Upstream,
+    dump_matrix, entry_key, fetch_release_targets, fetch_versions, http_get, load_json, log, notice,
+    pin_equal, retention, series_of, sha256_file, version_key, write_github_output,
 )
 from publish import render_index  # noqa: E402
 
@@ -185,6 +185,8 @@ def upstream_errors(m: dict, up: Upstream) -> list[str]:
     for points in m["releases"].values():
         for p, pins in points.items():
             for t, pin in pins.items():
+                if pin is None:
+                    continue  # absent when pinned; fill/bump pin it if upstream adds it later
                 live = up.pin("release", p, t)
                 if not pin_equal(pin, live):
                     errs.append(f"release pin {p} {t} differs from upstream (re-spin?): "
@@ -245,6 +247,18 @@ def fill_missing_release_pins(m: dict, up: Upstream, ch: Changes) -> None:
                 if t not in pins:
                     pins[t] = up.pin("release", p, t)
                     ch.add(f"{p} {t}: pin {describe(pins[t])}")
+                elif pins[t] is None:
+                    # Absent when pinned; upstream may still upload it to this release later.
+                    try:
+                        live = up.pin("release", p, t)
+                    except BadSignature:
+                        raise
+                    except (NotFound, Fatal) as e:
+                        notice(f"{p} {t}: appearing upstream but not complete yet ({e})")
+                        continue
+                    if live is not None:
+                        pins[t] = live
+                        ch.add(f"{p} {t}: uploaded late, pin {describe(live)}")
 
 
 def fill_missing_snapshot_pins(m: dict, up: Upstream, ch: Changes) -> None:
@@ -331,9 +345,9 @@ def version_complete(m: dict, up: Upstream, s: str, v: str, current: dict) -> di
     try:
         for t in m["targets"]:
             pins[t] = up.pin("release", v, t)
+    except BadSignature:
+        raise
     except (NotFound, Fatal) as e:
-        if isinstance(e, Fatal) and "gpgv" in str(e):
-            raise
         notice(f"{v}: not complete upstream yet ({e}); keeping series {s} unchanged")
         return None
     if current:
@@ -399,12 +413,19 @@ def bump_snapshot(m: dict, manifest: dict, up: Upstream, ch: Changes) -> None:
     for t in m["targets"]:
         if t in m["snapshot_exclude"]:
             continue
-        live = up.pin("snapshot", "SNAPSHOT", t)
         if t not in m["snapshot"]:
-            m["snapshot"][t] = live
-            ch.add(f"SNAPSHOT {t}: pin {describe(live)}")
+            m["snapshot"][t] = up.pin("snapshot", "SNAPSHOT", t)
+            ch.add(f"SNAPSHOT {t}: pin {describe(m['snapshot'][t])}")
             continue
         stored = m["snapshot"][t]
+        try:
+            live = up.pin("snapshot", "SNAPSHOT", t)
+        except BadSignature:
+            raise
+        except (NotFound, Fatal) as e:
+            # Still mid-upload after the retries: keep the current pin, check again next run.
+            notice(f"SNAPSHOT {t}: upstream not consistent ({e}); keeping {describe(stored)}")
+            continue
         if stored is None or live is None:
             if not pin_equal(stored, live):
                 m["snapshot"][t] = live

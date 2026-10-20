@@ -131,9 +131,13 @@ Upstream fetch for one (channel, version, target): base
 (target absent). Otherwise `sha256sums` + `.asc` are verified with `gpgv` against the vendored key,
 exactly one `openwrt-sdk-*.Linux-x86_64.tar.zst` line must exist, `profiles.json` must match its
 `sha256sums` entry, `target`/`version_number` must match, and `kmods/<kernel>/packages.adb` must be
-listed and reachable. SNAPSHOT inconsistencies (files from different buildbot runs) are retried
-3× with 60 s pauses; anything else fails the command (no partial matrices). Exception for
-releases: upstream sometimes rewrites a release's `profiles.json` without re-signing `sha256sums`
+listed and reachable. For releases the SDK tarball itself must also answer a HEAD request:
+upstream uploads metadata and SDKs separately, and a pinned release whose SDK is missing fails its
+build, which blocks the whole run's publish (SNAPSHOT items included). SNAPSHOT inconsistencies
+(files from different buildbot runs) are retried 3× with 60 s pauses. An incomplete target is an
+error whose meaning each subcommand decides (below); a `gpgv` failure (`BadSignature`) always fails
+the command. A release `profiles.json` that does not match `sha256sums` has its own rule, because
+upstream sometimes rewrites a release's `profiles.json` without re-signing `sha256sums`
 (25.12.6 `qualcommax/ipq50xx` on 2026-10-20: 5 of 14 profiles left, other fields unchanged). The
 pin is then accepted only if its kernel is the single `kmods/<id>/` in `sha256sums` and its
 `version_code` equals the signed `version.buildinfo`; `arch` stays unsigned but `build-one.sh`
@@ -141,10 +145,13 @@ fails unless the APK built by the verified SDK has that arch. A notice is logged
 
 Subcommands:
 
-- `validate --structure|--complete [--matrix F]`.
+- `validate --structure|--complete [--matrix F]`. `--complete` also re-fetches every non-null
+  release pin and fails if upstream differs (re-spin); `null` pins are left to `fill`/`bump`.
 - `fill [--in-memory --out F]`: local policy (trim each series to the newest
   `build_point_releases`, drop pins of unlisted targets, clear/trim `snapshot`), then fetch missing
-  pins only. Never adds versions or series and never bumps phantun.
+  pins, and re-check `null` release pins (a target upstream uploads to a release after we pinned
+  it gets pinned then; while its upload is incomplete it stays `null` with a notice). Never adds
+  versions or series and never bumps phantun.
 - `bump --manifest F`: `fill`'s local policy, then
   1. phantun (unless `hold`): `GET /repos/bjin/phantun-dkms/releases/latest` (excludes drafts and
      pre-releases = "stable"), asset must be `phantun-dkms_<v>.tar.gz` with top-level `configure`
@@ -155,15 +162,18 @@ Subcommands:
      (`YY.MM.N`, no `-rc`) per series. A new point release is added only when complete upstream:
      every target that has a non-null pin in the nearest listed point release of the same series
      must fetch a non-null pin; for a new series (no reference), every matrix target listed in the
-     version's `.targets.json`. Otherwise the series is left unchanged with a notice (OpenWrt
+     version's `.targets.json`. A target counts as complete only when its pin passes every check
+     above, SDK included. Otherwise the series is left unchanged with a notice (OpenWrt
      uploads targets over hours). Versions leaving the window and untracked series are dropped
      from the matrix (their packages stay until retention prunes them).
-  3. missing release pins are filled.
+  3. missing release pins are filled, `null` ones re-checked (as in `fill`).
   4. SNAPSHOT (only if `policy.snapshot`; with `hold_openwrt` only missing pins): for each
      non-excluded target, replace the stored pin when the kernel id changed, or when the stored
      (kernel, phantun version, pkg_release) is not in the manifest and the SDK sha256 changed
      (stale pin for a build that is still needed). Otherwise keep it, so a rebuilt SDK with the
-     same kernel does not cause a daily commit.
+     same kernel does not cause a daily commit. A target that is still inconsistent after the
+     retries (mid-upload) keeps its stored pin with a notice; the other targets and the release
+     part of the run continue.
 
   Prints one line per change (used as the commit message body).
 - `plan --matrix F --manifest F [--pubkey PEM] [--index HTML] [--pr-base REF --pr-title T]
