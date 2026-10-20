@@ -235,7 +235,8 @@ class Upstream:
             raise Fatal(f"{what}: expected exactly one SDK in {base}sha256sums, found {len(sdk_lines)}")
         sdk_sha, sdk = sdk_lines[0]
         got = hashlib.sha256(profiles_raw).hexdigest()
-        if sums.get("profiles.json") != got:
+        profiles_signed = sums.get("profiles.json") == got
+        if not profiles_signed and channel != "release":
             raise Inconsistent(f"{what}: profiles.json sha256 {got} does not match verified sha256sums")
         p = json.loads(profiles_raw)
         lk = p["linux_kernel"]
@@ -255,6 +256,21 @@ class Upstream:
             raise Inconsistent(f"{what}: {adb} not listed in sha256sums")
         if not http_exists(base + adb):
             raise Inconsistent(f"{what}: {base}{adb} missing")
+        if not profiles_signed:
+            # Upstream rewrote a release's profiles.json without re-signing sha256sums (25.12.6
+            # qualcommax/ipq50xx, 2026-10-20). Accept it only when the signed files confirm its
+            # kernel identity and version_code; its arch is checked by build-one.sh against the
+            # APK that the verified SDK builds.
+            kmods = sorted({n.split("/")[1] for n in sums if re.fullmatch(r"kmods/[^/]+/packages\.adb", n)})
+            buildinfo = http_get(base + "version.buildinfo")
+            if sums.get("version.buildinfo") != hashlib.sha256(buildinfo).hexdigest():
+                raise Fatal(f"{what}: neither profiles.json nor version.buildinfo match verified sha256sums")
+            signed_code = buildinfo.decode().strip()
+            if kmods != [kernel] or signed_code != version_code:
+                raise Fatal(f"{what}: unsigned profiles.json ({kernel}, {version_code}) disagrees with "
+                            f"signed sha256sums kmods {kmods} / version.buildinfo {signed_code!r}")
+            notice(f"{what}: profiles.json sha256 {got} is not in the signed sha256sums; kernel and "
+                   f"version_code confirmed by signed files, arch {arch} is checked by the build")
         pin = {"sdk": sdk, "sdk_sha256": sdk_sha, "kernel": kernel, "arch": arch,
                "version_code": version_code}
         log(f"{what}: {pin}")

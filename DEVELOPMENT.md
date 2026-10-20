@@ -132,7 +132,12 @@ Upstream fetch for one (channel, version, target): base
 exactly one `openwrt-sdk-*.Linux-x86_64.tar.zst` line must exist, `profiles.json` must match its
 `sha256sums` entry, `target`/`version_number` must match, and `kmods/<kernel>/packages.adb` must be
 listed and reachable. SNAPSHOT inconsistencies (files from different buildbot runs) are retried
-3× with 60 s pauses; anything else fails the command (no partial matrices).
+3× with 60 s pauses; anything else fails the command (no partial matrices). Exception for
+releases: upstream sometimes rewrites a release's `profiles.json` without re-signing `sha256sums`
+(25.12.6 `qualcommax/ipq50xx` on 2026-10-20: 5 of 14 profiles left, other fields unchanged). The
+pin is then accepted only if its kernel is the single `kmods/<id>/` in `sha256sums` and its
+`version_code` equals the signed `version.buildinfo`; `arch` stays unsigned but `build-one.sh`
+fails unless the APK built by the verified SDK has that arch. A notice is logged.
 
 Subcommands:
 
