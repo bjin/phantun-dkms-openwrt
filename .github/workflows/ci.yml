@@ -411,7 +411,7 @@ jobs:
               if item["channel"] == "snapshot" and status == "failed":
                   failed.append(item["id"])
           if rows:
-              out += ["", "| item | kernel | status | smoke | apk sha256 |", "|---|---|---|---|---|", *rows]
+              out += ["", "| item | kernel | status | smoke | unsigned apk sha256 |", "|---|---|---|---|---|", *rows]
           plan = needs.get("plan", {}).get("outputs", {})
           out += ["", f"planned items: {plan.get('count', '?')}, publish: {plan.get('publish', '?')}"]
           pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(out) + "\n")

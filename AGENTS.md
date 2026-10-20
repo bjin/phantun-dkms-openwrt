@@ -15,12 +15,14 @@ Design and details are in `DEVELOPMENT.md`; `README.md` is for router users only
   APK's `kernel=` dependency is the only ABI guard on OpenWrt.
 - Never rebuild an already published (channel, version, target, kernel, phantun version,
   pkg_release). Any change to package content must change `phantun.version` or `pkg_release`.
-- Only `packages.adb` is signed, with our key from secret `APK_SIGNING_KEY`, and only in the
-  `publish` job. Never publish anything from the SDK's `bin/` other than the `kmod-phantun` APK.
+- Every published APK and every `packages.adb` is signed with our key from secret
+  `APK_SIGNING_KEY`, only in the `publish` job. Never publish anything from the SDK's `bin/` other
+  than the `kmod-phantun` APK.
 - `gh-pages` is a single orphan commit, force-pushed. Deployment is a separate idempotent job that
   compares the live `pages-state.json` with `gh-pages`.
-- Generated feed files are deterministic; indexes are re-signed only in directories whose APK set
-  changed.
+- Generated feed files are deterministic; an APK is signed once when it is added, indexes are
+  re-signed only in directories whose APK set changed, and everything is re-signed only when the
+  key changes.
 
 ## Conventions
 
@@ -32,5 +34,5 @@ Design and details are in `DEVELOPMENT.md`; `README.md` is for router users only
 - Scratch files go in `work/` (git-ignored).
 - Before pushing: `actionlint .github/workflows/ci.yml`, `shellcheck scripts/build-one.sh`,
   `python3 -m py_compile scripts/*.py`.
-- After recipe or build-script changes, rebuild a published item locally and compare APK sha256
-  with the published one; builds are reproducible.
+- After recipe or build-script changes, rebuild a published item locally and compare the APK
+  sha256 with the manifest's `unsigned_sha256`; builds are reproducible.

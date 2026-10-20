@@ -18,10 +18,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import (  # noqa: E402
-    KERNEL_RE, MAX_ITEMS, MIN_SERIES, PHANTUN_VERSION_RE, PIN_FIELDS, POINT_RE, REPO_ROOT, SCHEMA,
-    SERIES_RE, SHA256_RE, TARGET_RE, Fatal, NotFound, Upstream, dump_matrix, entry_key,
-    fetch_release_targets, fetch_versions, http_get, load_json, log, notice, pin_equal,
-    retention, series_of, version_key, write_github_output,
+    APK_PUBKEY, KERNEL_RE, MAX_ITEMS, MIN_SERIES, PHANTUN_VERSION_RE, PIN_FIELDS, POINT_RE,
+    REPO_ROOT, SCHEMA, SERIES_RE, SHA256_RE, TARGET_RE, Fatal, NotFound, Upstream, dump_matrix,
+    entry_key, fetch_release_targets, fetch_versions, http_get, load_json, log, notice, pin_equal,
+    retention, series_of, sha256_file, version_key, write_github_output,
 )
 
 DEFAULT_MATRIX = REPO_ROOT / "matrix.json"
@@ -570,7 +570,10 @@ def cmd_plan(args) -> int:
         _, deleted = retention(entries, m)
         for e, why in deleted:
             log(f"would prune {e['path']}: {why}")
-        publish = bool(items) or bool(deleted)
+        resign = bool(entries) and manifest.get("pubkey_sha256") != sha256_file(Path(args.pubkey))
+        if resign:
+            log("would re-sign every APK and index: manifest.json pubkey_sha256 != --pubkey")
+        publish = bool(items) or bool(deleted) or resign
     if len(items) > MAX_ITEMS:
         raise Fatal(f"{len(items)} build items > {MAX_ITEMS}")
     for it in items:
@@ -610,6 +613,7 @@ def main() -> int:
     p = sub.add_parser("plan")
     p.add_argument("--matrix", default=str(DEFAULT_MATRIX))
     p.add_argument("--manifest", required=True)
+    p.add_argument("--pubkey", default=str(APK_PUBKEY), help="public key the feed must be signed with")
     p.add_argument("--pr-base", help="git ref of the PR base (PR mode)")
     p.add_argument("--pr-title", help="PR title (default: $PR_TITLE)")
     p.add_argument("--github-output", action="store_true", help="also write items/count/publish to $GITHUB_OUTPUT")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Assemble the gh-pages tree (DEVELOPMENT.md, "publish.py"): add built APKs, apply retention,
-re-index, write manifest.json, index.html, phantun-openwrt.pem and pages-state.json. Never deploys
-or commits.
+"""Assemble the gh-pages tree (DEVELOPMENT.md, "publish.py"): sign and add built APKs, apply
+retention, re-index, write manifest.json, index.html, phantun-openwrt.pem and pages-state.json.
+Never deploys or commits.
 
 Artifacts: --artifacts holds one directory per build item, each with item.json (the plan item),
 status (ok|stale|failed) and, when ok, build.json plus the APK (scripts/build-one.sh --out).
@@ -28,9 +28,10 @@ from common import (  # noqa: E402
 ROOT_FILES = ("index.html", "phantun-openwrt.pem", "manifest.json", "pages-state.json")
 PAGES_URL = "https://bjin.github.io/phantun-dkms-openwrt"
 MAX_TREE_BYTES = 500 * 1024 * 1024
+MANIFEST_SCHEMA = 2
 ENTRY_FIELDS = ("channel", "series", "version", "target", "kernel", "arch", "version_code",
-                "phantun_version", "pkg_release", "path", "apk_sha256", "apk_size", "built_at",
-                "run_url")
+                "phantun_version", "pkg_release", "path", "apk_sha256", "apk_size", "unsigned_sha256",
+                "built_at", "run_url")
 
 
 def key_of_item(it: dict) -> tuple:
@@ -84,8 +85,8 @@ def checked_apk(art: dict) -> tuple[Path, dict]:
         "channel": item["channel"], "series": item.get("series"), "version": item["version"],
         "target": item["target"], "kernel": item["kernel"], "arch": item["arch"],
         "version_code": item["version_code"], "phantun_version": item["phantun_version"],
-        "pkg_release": int(item["pkg_release"]), "path": rel, "apk_sha256": build["apk_sha256"],
-        "apk_size": build["apk_size"], "built_at": build["built_at"], "run_url": build["run_url"],
+        "pkg_release": int(item["pkg_release"]), "path": rel, "unsigned_sha256": build["apk_sha256"],
+        "built_at": build["built_at"], "run_url": build["run_url"],
     }
     if entry["channel"] != "release":
         del entry["series"]
@@ -99,17 +100,42 @@ def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     return r
 
 
+def verify_signature(apk_bin: str, path: Path, pubkey: Path) -> None:
+    """`apk verify` an index or APK with pubkey as the only trusted key."""
+    with tempfile.TemporaryDirectory() as root:
+        keys = Path(root, "etc/apk/keys")
+        keys.mkdir(parents=True)
+        shutil.copy(pubkey, keys / "phantun-openwrt.pem")
+        run([apk_bin, "--root", root, "verify", str(path.resolve())])
+
+
+def sign_apk(apk_bin: str, src: Path, dest: Path, unsigned_sha256: str, signing_key: Path,
+             pubkey: Path) -> None:
+    """Write src to dest carrying exactly one signature, made with signing_key.
+
+    `apk adbsign` exits 0 even when it fails (and may leave a truncated file), so the result is
+    checked instead: it must verify with pubkey alone and, with its signatures removed, be
+    byte-identical to the build output (unsigned_sha256)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        signed, bare = Path(tmp, "signed.apk"), Path(tmp, "bare.apk")
+        shutil.copyfile(src, signed)
+        run([apk_bin, "adbsign", "--allow-untrusted", "--reset-signatures", "--sign-key",
+             str(signing_key), str(signed)])
+        verify_signature(apk_bin, signed, pubkey)
+        shutil.copyfile(signed, bare)
+        run([apk_bin, "adbsign", "--allow-untrusted", "--reset-signatures", str(bare)])
+        if sha256_file(bare) != unsigned_sha256:
+            raise Fatal(f"{dest}: signed APK minus signatures is not the build output {unsigned_sha256}")
+        shutil.copyfile(signed, dest)
+
+
 def index_dir(apk_bin: str, kdir: Path, signing_key: Path, pubkey: Path) -> None:
     apks = sorted(p.name for p in kdir.glob("*.apk"))
     adb = kdir / "packages.adb"
     adb.unlink(missing_ok=True)
     run([apk_bin, "mkndx", "--allow-untrusted", "--sign", str(signing_key), "--output",
          "packages.adb", *apks], cwd=kdir)
-    with tempfile.TemporaryDirectory() as root:
-        keys = Path(root, "etc/apk/keys")
-        keys.mkdir(parents=True)
-        shutil.copy(pubkey, keys / "phantun-openwrt.pem")
-        run([apk_bin, "--root", root, "verify", str(adb.resolve())])
+    verify_signature(apk_bin, adb, pubkey)
     log(f"indexed and verified {kdir}")
 
 
@@ -197,7 +223,8 @@ def publish(args) -> bool:
     pages.mkdir(parents=True, exist_ok=True)
     manifest_file = pages / "manifest.json"
     old_state = content_sha256(pages) if (pages / "pages-state.json").exists() else None
-    entries = load_json(manifest_file)["entries"] if manifest_file.exists() else []
+    old_manifest = load_json(manifest_file) if manifest_file.exists() else {"entries": []}
+    entries = old_manifest["entries"]
     items = load_json(args.items) if args.items else []
     art_dir = Path(args.artifacts) if args.artifacts else None
     arts = load_artifacts(art_dir) if art_dir and art_dir.is_dir() else {}
@@ -212,14 +239,18 @@ def publish(args) -> bool:
         if st != "ok":
             log(f"skipping {it['id']}: {st}")
 
-    pubkey = Path(args.pubkey)
+    pubkey = Path(args.pubkey).resolve()
+    pubkey_sha256 = sha256_file(pubkey)
+    signing_key = Path(args.signing_key).resolve()
     pages_pem = pages / "phantun-openwrt.pem"
-    rotate = pages_pem.exists() and pages_pem.read_bytes() != pubkey.read_bytes()
-    if rotate:
-        log("public key changed: re-signing every index")
+    # Key rotation, or a tree from before APKs were signed (schema 1 has no pubkey_sha256).
+    resign = old_manifest.get("pubkey_sha256") != pubkey_sha256
+    if resign and entries:
+        log("published with another key or unsigned APKs: re-signing every APK and index")
 
-    # 2. Add built APKs.
+    # 2. Sign and add built APKs.
     changed_dirs: set[str] = set()
+    added: set[tuple] = set()
     by_key = {entry_key(e): e for e in entries}
     for it in items:
         art = arts.get(it["id"])
@@ -228,8 +259,10 @@ def publish(args) -> bool:
         apk, entry = checked_apk(art)
         dest = pages / entry["path"]
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(apk, dest)
+        sign_apk(apk_bin, apk, dest, entry["unsigned_sha256"], signing_key, pubkey)
+        entry.update(apk_sha256=sha256_file(dest), apk_size=dest.stat().st_size)
         by_key[entry_key(entry)] = entry
+        added.add(entry_key(entry))
         changed_dirs.add(str(Path(entry["path"]).parent))
         log(f"added {entry['path']}")
     entries = list(by_key.values())
@@ -242,28 +275,45 @@ def publish(args) -> bool:
         log(f"pruned {e['path']}: {why}")
     entries = sort_entries(kept)
 
-    # 5. Remove indexes of emptied dirs, empty dirs; re-index changed dirs.
+    # 5. Re-sign the kept APKs after a key change.
+    if resign:
+        for e in entries:
+            if entry_key(e) in added:
+                continue
+            f = pages / e["path"]
+            if sha256_file(f) != e["apk_sha256"]:
+                raise Fatal(f"{e['path']}: sha256 does not match manifest.json")
+            # Schema 1 published the unsigned build output, so apk_sha256 is the unsigned hash.
+            e.setdefault("unsigned_sha256", e["apk_sha256"])
+            sign_apk(apk_bin, f, f, e["unsigned_sha256"], signing_key, pubkey)
+            e.update(apk_sha256=sha256_file(f), apk_size=f.stat().st_size)
+            log(f"re-signed {e['path']}")
+
+    # 6. Remove indexes of emptied dirs, empty dirs; re-index changed dirs.
     live_dirs = {str(Path(e["path"]).parent) for e in entries}
     for d in changed_dirs - live_dirs:
         (pages / d / "packages.adb").unlink(missing_ok=True)
     remove_empty_dirs(pages)
-    for d in sorted(live_dirs if rotate else changed_dirs & live_dirs):
-        index_dir(apk_bin, pages / d, Path(args.signing_key).resolve(), pubkey.resolve())
+    for d in sorted(live_dirs if resign else changed_dirs & live_dirs):
+        index_dir(apk_bin, pages / d, signing_key, pubkey)
 
-    # 6. Root files.
-    manifest = {"schema": 1, "entries": [{k: e[k] for k in ENTRY_FIELDS if k in e} for e in entries]}
+    # 7. Root files.
+    manifest = {"schema": MANIFEST_SCHEMA, "pubkey_sha256": pubkey_sha256,
+                "entries": [{k: e[k] for k in ENTRY_FIELDS if k in e} for e in entries]}
     manifest_file.write_text(json.dumps(manifest, indent=2) + "\n")
     shutil.copyfile(pubkey, pages_pem)
-    (pages / "index.html").write_text(render_index(entries, sha256_file(pubkey)))
+    (pages / "index.html").write_text(render_index(entries, pubkey_sha256))
     state = content_sha256(pages)
     (pages / "pages-state.json").write_text(json.dumps({"content_sha256": state}, indent=2) + "\n")
 
-    # 7. Sanity.
+    # 8. Sanity.
     files = set(tree_files(pages))
     on_disk = {f for f in files if f.endswith(".apk")}
     in_manifest = {e["path"] for e in entries}
     if on_disk != in_manifest:
         raise Fatal(f"APKs on disk {sorted(on_disk ^ in_manifest)} disagree with manifest")
+    if stale := [e["path"] for e in entries if sha256_file(pages / e["path"]) != e["apk_sha256"]]:
+        raise Fatal(f"APKs whose sha256 disagrees with manifest: {stale}")
     allowed = set(ROOT_FILES) | in_manifest | {f"{d}/packages.adb" for d in live_dirs}
     if extra := files - allowed:
         raise Fatal(f"unexpected files in the tree: {sorted(extra)}")

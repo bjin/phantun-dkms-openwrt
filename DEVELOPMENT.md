@@ -45,8 +45,11 @@ Facts the design depends on (verified on 25.12.6 and SNAPSHOT 2026-10):
   `nf_defrag_ipv6` all ship in it); it is preinstalled on default images (firewall4).
 - **All OpenWrt kernels have `CONFIG_WERROR=y`**: every phantun-dkms `configure` probe must compile
   warning-free or it silently reports "no".
-- **apk trust**: OpenWrt signs only `packages.adb` (`apk mkndx --sign`); packages are trusted
-  through the index hashes. Keys are EC P-256 PEM in `/etc/apk/keys/`.
+- **apk trust**: OpenWrt signs only `packages.adb` (`apk mkndx --sign`); a package installed from
+  a repository is trusted through the index, which records its identity (hash of the APK's ADB
+  metadata block) and `file-size`. A standalone `apk add ./x.apk` needs a signature inside the
+  APK (`apk adbsign`); it is a separate block, so signing keeps the identity but changes the file
+  size. Keys are EC P-256 PEM in `/etc/apk/keys/`.
 - **Kernel identity churn**: a stable point release never changes; every point release has a new
   identity. SNAPSHOT `mediatek/filogic` changed identity ~every 4 days; the SNAPSHOT SDK file name
   has no version and is overwritten in place, so a SNAPSHOT identity can only be built while its
@@ -158,12 +161,14 @@ Subcommands:
      same kernel does not cause a daily commit.
 
   Prints one line per change (used as the commit message body).
-- `plan --matrix F --manifest F [--pr-base REF --pr-title T] [--github-output]`: build items as
-  JSON (each carries its pin and phantun fields, an `id` such as
+- `plan --matrix F --manifest F [--pubkey PEM] [--pr-base REF --pr-title T] [--github-output]`:
+  build items as JSON (each carries its pin and phantun fields, an `id` such as
   `release-25.12.6-mediatek-filogic` or `snapshot-x86-64`, and `smoke` for `x86/64`).
   - Non-PR: every non-null release pin and (if enabled) snapshot pin whose
     (channel, version, target, kernel, phantun version, pkg_release) is not in the manifest.
-    `publish` is true when there are items or the retention dry-run would prune something.
+    `publish` is true when there are items, the retention dry-run would prune something, or the
+    manifest's `pubkey_sha256` is not the sha256 of `--pubkey` (default
+    `keys/phantun-openwrt.pem`): key rotation, or a feed published before APKs were signed.
   - PR (`--pr-base`): targets added or with changed pins → newest listed point release of every
     series (+ SNAPSHOT if enabled); recipe or `build-one.sh` changed → every target for the newest
     point release + SNAPSHOT for `mediatek/filogic` and `x86/64`; otherwise nothing. Never
@@ -215,14 +220,15 @@ with 0.6.0.1 → APK sha256 `053f72f23fa36ab6ce80b16c832416ffd53009652569c3faebf
 
 For `x86/64` items, after a successful build: downloads the stock
 `openwrt-<ver>-x86-64-generic-ext4-combined.img.gz` (verified against GPG-verified `sha256sums`),
-indexes the APK with a throwaway key using the SDK's `staging_dir/host/bin/apk`, attaches
-`repo/` + key as a read-only tar disk, boots
+signs the APK and indexes it with a throwaway key using the SDK's `staging_dir/host/bin/apk`,
+attaches `repo/` + key as a read-only tar disk, boots
 `qemu-system-x86_64 [-enable-kvm -cpu host] -m 512 -smp 2 -nographic -no-reboot -nic none` and
 drives the console with `pexpect` (prompt `root@[^:\r\n]*:[^#\r\n]*# `): `apk list -I kernel`
 must equal the pin, then `apk add --no-network --repository …/packages.adb kmod-phantun`,
 `insmod phantun managed_local_ports=51820` (not `modprobe`), `/proc/modules`, parameter readback,
-`rmmod`, and no `BUG|Oops|WARNING|Call Trace` in the dmesg lines since `insmod`. SNAPSHOT image
-with a different kernel than the pin → "skipped", not failed. ~30 s with KVM.
+`rmmod`, `apk del` + `apk add --no-network …/<apk>` (standalone, trusted by the APK's own
+signature), and no `BUG|Oops|WARNING|Call Trace` in the dmesg lines since `insmod`. SNAPSHOT
+image with a different kernel than the pin → "skipped", not failed. ~30 s with KVM.
 
 ## Feed (`gh-pages`)
 
@@ -233,12 +239,15 @@ snapshots/targets/<t>/<s>/kmods/<kernel-id>/{packages.adb,kmod-phantun-<apkver>.
 ```
 
 The path suffix equals the router's own `distfeeds.list` kmods line, which is what the README's
-`sed` relies on. Each kmods directory holds exactly one APK and its signed index.
+`sed` relies on. Each kmods directory holds exactly one signed APK and its signed index.
 
-`manifest.json` has one entry per APK: `channel`, `series` (releases), `version`, `target`,
-`kernel`, `arch`, `version_code`, `phantun_version`, `pkg_release`, `path`, `apk_sha256`,
-`apk_size`, `built_at`, `run_url`. It is the record of what is built (`plan` diffs against it) and,
-with the orphan `gh-pages`, the audit trail.
+`manifest.json` (schema 2) = `{"schema", "pubkey_sha256" (sha256 of the PEM everything is signed
+for), "entries"}` with one entry per APK: `channel`, `series` (releases), `version`, `target`,
+`kernel`, `arch`, `version_code`, `phantun_version`, `pkg_release`, `path`, `apk_sha256` and
+`apk_size` (the published, signed file), `unsigned_sha256` (the build output, reproducible: the
+published file minus signatures, `apk adbsign --allow-untrusted --reset-signatures`), `built_at`,
+`run_url`. It is the record of what is built (`plan` diffs against it) and, with the orphan
+`gh-pages`, the audit trail.
 
 `pages-state.json` = `{"content_sha256": sha256 over sorted "<path>\0<file sha256>\n" of every
 other file}`: the deploy job's "is the live site current?" token.
@@ -249,8 +258,11 @@ Inputs: `matrix.json`, the current tree (exported from `gh-pages`), the plan ite
 artifacts (`item.json`, `status`, and on success `build.json` + APK). Steps:
 
 1. Abort if any **release** item of the run is not `ok` (release publishing is all-or-nothing).
-2. Copy every `ok` APK (sha256 checked against `build.json`, item checked against the plan) into
-   place; an entry with the same key is replaced.
+2. Sign every `ok` APK (sha256 checked against `build.json`, item checked against the plan) into
+   place with `apk adbsign --allow-untrusted --reset-signatures --sign-key`; an entry with the same
+   key is replaced. `adbsign` exits 0 even when it fails and may leave a truncated file, so the
+   result is checked instead: `apk --root <tmp> verify` with only our public key in
+   `<tmp>/etc/apk/keys/`, and the file minus signatures must equal the `build.json` sha256.
 3. **Retention** (a storage cap, never a reason to build): delete release entries whose
    (phantun version, pkg_release) differs from the matrix, whose series is no longer in
    `matrix.releases`, or whose target is no longer listed; then per series keep only the newest
@@ -258,14 +270,17 @@ artifacts (`item.json`, `status`, and on success `build.json` + APK). Steps:
    window stay published under this cap).
 4. SNAPSHOT: everything removed if `policy.snapshot` is false; otherwise keep entries of listed
    targets with the current phantun, newest 5 per target by `version_code` number.
-5. Remove emptied directories; re-sign `packages.adb` **only** in directories whose APK set changed
-   (ECDSA signatures are randomized; re-signing everything would change the tree on every run).
-   All indexes are re-signed only when `phantun-openwrt.pem` changed (key rotation). Every new
-   index is checked with `apk --root <tmp> verify` with the public key in `<tmp>/etc/apk/keys/`.
-6. Write `manifest.json`, `index.html`, `phantun-openwrt.pem`, `pages-state.json` —
+5. If the manifest's `pubkey_sha256` differs from the public key (rotation, or a schema-1 feed with
+   unsigned APKs), re-sign every kept APK the same way (a schema-1 `apk_sha256` is the unsigned
+   hash).
+6. Remove emptied directories; re-sign `packages.adb` **only** in directories whose APK set changed
+   (ECDSA signatures are randomized; re-signing everything would change the tree on every run), or
+   in every directory after step 5. The index is built from the signed APKs (it records their
+   size) and checked with `apk --root <tmp> verify`.
+7. Write `manifest.json`, `index.html`, `phantun-openwrt.pem`, `pages-state.json` —
    deterministic (no timestamps), so an unchanged input gives a byte-identical tree.
-7. Sanity: APKs on disk == manifest, exactly one APK + index per kmods directory, no stray files,
-   total < 500 MB.
+8. Sanity: APKs on disk == manifest (paths and sha256), exactly one APK + index per kmods
+   directory, no stray files, total < 500 MB.
 
 `apk` here is apk-tools v3.0.5 (commit `b5a31c0d865342ad80be10d68f1bb3d3ad9b0866`, the version
 OpenWrt 25.12.6 uses) built from source with meson and cached by commit; it is cloned from the
@@ -319,8 +334,9 @@ flowchart LR
   `openssl ecparam -name prime256v1 -genkey -noout -out phantun-openwrt.key` and
   `openssl ec -in phantun-openwrt.key -pubout -out keys/phantun-openwrt.pem`; private key into the
   `APK_SIGNING_KEY` secret plus an offline backup, never committed; publish the PEM's sha256 in
-  the README. Rotation: commit the new public key (publish then re-signs every index) and tell
-  users to install it.
+  the README. Rotation: update the `APK_SIGNING_KEY` secret and commit the new public key; the
+  push run's `plan` sees the manifest's `pubkey_sha256` differ and `publish` re-signs every APK
+  and index. Tell users to install the new key.
 - OpenWrt key: compare the fingerprint of `keys/openwrt-*.asc` with openwrt.org's signatures page
   before replacing it. When OpenWrt rotates keys, `gpgv` fails and `bump` stops until `keys/` is
   updated.

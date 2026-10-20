@@ -52,6 +52,9 @@ here, so the router only ever sees the package built for its exact firmware.
   `/etc/sysupgrade.conf` so the key survives upgrades.
 - **Attended Sysupgrade / `owut`** cannot build firmware images that contain `kmod-phantun`:
   use `owut upgrade --remove kmod-phantun`, then reinstall after the upgrade.
+- **Downloaded packages:** each `.apk` is signed with the same key, so once the key is installed,
+  `apk add ./kmod-phantun-<version>.apk` works without the feed (e.g. on an offline router).
+  Download the file listed for your exact version, target and kernel on the web page.
 - **Never** use `--force-broken-world` or `--allow-untrusted`, and never copy `phantun.ko` between
   routers: OpenWrt kernels do not reject modules built for another kernel, and a wrong module can
   crash the router. The package's dependency on the exact `kernel` package is what prevents this.
@@ -77,10 +80,12 @@ Everything runs in GitHub Actions in this repository; no package is built or sig
 3. Each missing package is built with the unmodified official SDK, checked (package name, version,
    architecture, exact `kernel` dependency, no unresolved symbols) and, for `x86/64`, installed and
    loaded in a stock OpenWrt virtual machine.
-4. The feed indexes are signed with this repository's key and published to GitHub Pages.
+4. Every package and every feed index is signed with this repository's key and published to
+   GitHub Pages.
 
 Builds are reproducible: the same inputs give a byte-identical package, so you can rebuild one
-yourself and compare it with the published file (see `DEVELOPMENT.md`).
+yourself and compare it with `unsigned_sha256` in `manifest.json`; the published file is that
+package plus a signature block (see `DEVELOPMENT.md`).
 
 ## Requesting a target
 

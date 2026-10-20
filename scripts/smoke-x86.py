@@ -75,6 +75,9 @@ def make_payload(apk: Path, apk_bin: str, tmp: Path) -> Path:
     repo = tmp / "repo"
     repo.mkdir()
     (repo / apk.name).write_bytes(apk.read_bytes())
+    # Like publish.py: sign the APK itself, then index it.
+    subprocess.run([apk_bin, "adbsign", "--allow-untrusted", "--sign-key", str(key), apk.name],
+                   cwd=repo, check=True)
     subprocess.run([apk_bin, "mkndx", "--allow-untrusted", "--sign", str(key), "--output",
                     "packages.adb", apk.name], cwd=repo, check=True)
     payload = tmp / "payload.tar"
@@ -174,6 +177,10 @@ def smoke(args) -> str:
             if val.splitlines()[-1].strip() != "51820":
                 raise Fatal(f"managed_local_ports reads back {val!r}")
             g.must("rmmod phantun")
+            # A downloaded APK installs on its own signature (no index, no --allow-untrusted).
+            g.must("apk del kmod-phantun", timeout=120)
+            g.must(f"apk add --no-network /tmp/p/repo/{apk.name}", timeout=120)
+            g.must(f"test -f /lib/modules/{linux_version}/phantun.ko")
             new = g.must(f"dmesg | tail -n +{before + 1}")
             log("guest dmesg since insmod:\n" + new)
             if bad := [l for l in new.splitlines() if re.search(r"BUG|Oops|WARNING|Call Trace", l)]:
