@@ -4,11 +4,11 @@
     "version": "0.6.0.1",
     "tarball_sha256": "cebd1ae10c76dccaa4ae73bb1212996366c098a5ed4312e06a1bcd9fff72c47e",
     "pkg_release": 1,
-    "hold": true
+    "hold": false
   },
   "policy": {
-    "hold_openwrt": true,
-    "build_point_releases": 1,
+    "hold_openwrt": false,
+    "build_point_releases": 2,
     "retain_point_releases": 5,
     "snapshot": false
   },
