@@ -1,0 +1,50 @@
+include $(TOPDIR)/rules.mk
+include $(INCLUDE_DIR)/kernel.mk
+
+PKG_NAME:=phantun
+PKG_VERSION:=@PHANTUN_VERSION@
+PKG_RELEASE:=@PKG_RELEASE@
+
+PKG_SOURCE:=phantun-dkms_$(PKG_VERSION).tar.gz
+PKG_SOURCE_URL:=https://github.com/bjin/phantun-dkms/releases/download/v$(PKG_VERSION)/
+PKG_HASH:=@PHANTUN_SHA256@
+
+PKG_LICENSE:=GPL-2.0-or-later
+PKG_LICENSE_FILES:=LICENSE
+PKG_MAINTAINER:=Bin Jin <bjin@protonmail.com>
+
+include $(INCLUDE_DIR)/package.mk
+
+define KernelPackage/phantun
+  SUBMENU:=Network Support
+  TITLE:=In-kernel Phantun fake-TCP transport for UDP
+  URL:=https://github.com/bjin/phantun-dkms
+  DEPENDS:=+kmod-nf-conntrack
+  FILES:=$(PKG_BUILD_DIR)/phantun.ko
+endef
+
+define KernelPackage/phantun/description
+  Kernel module that carries selected UDP flows as fake TCP (Phantun
+  protocol) without a TUN device. Not loaded automatically.
+endef
+
+# The release tarball has no top-level directory.
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+	$(TAR) -C $(PKG_BUILD_DIR) -xzf $(DL_DIR)/$(PKG_SOURCE)
+	$(Build/Patch)
+endef
+
+# configure's probes run "make -C $KDIR M=... modules"; Kbuild reads ARCH and
+# CROSS_COMPILE from the environment, so the probes use the target toolchain.
+define Build/Configure
+	cd $(PKG_BUILD_DIR) && \
+		ARCH="$(LINUX_KARCH)" CROSS_COMPILE="$(KERNEL_CROSS)" \
+		./configure --with-kernel="$(LINUX_DIR)"
+endef
+
+define Build/Compile
+	+$(KERNEL_MAKE) M="$(PKG_BUILD_DIR)" modules
+endef
+
+$(eval $(call KernelPackage,phantun))

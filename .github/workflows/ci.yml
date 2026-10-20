@@ -1,0 +1,426 @@
+name: ci
+
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Run matrix.py bump (false: only fill, then build/publish from the current matrix)'
+        type: boolean
+        default: true
+      force_deploy:
+        description: 'Deploy gh-pages even if the live site looks current'
+        type: boolean
+        default: false
+  push:
+    branches: [master]
+    paths:
+      - matrix.json
+      - 'openwrt/**'
+      - 'scripts/**'
+      - 'keys/**'
+      - .github/workflows/ci.yml
+  pull_request:
+    paths:
+      - matrix.json
+      - 'openwrt/**'
+      - 'scripts/**'
+      - 'keys/**'
+      - .github/workflows/ci.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'master' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  APK_TOOLS_TAG: v3.0.5
+  APK_TOOLS_COMMIT: b5a31c0d865342ad80be10d68f1bb3d3ad9b0866
+
+jobs:
+  bump:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          fetch-depth: 0
+      - name: Fetch published manifest
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            git fetch --no-tags --depth 1 origin gh-pages
+            git show FETCH_HEAD:manifest.json > "$RUNNER_TEMP/manifest.json"
+          else
+            rc=$?
+            [ "$rc" = 2 ] || exit "$rc"
+            echo "::notice::no gh-pages branch yet"
+            echo '{"entries":[]}' > "$RUNNER_TEMP/manifest.json"
+          fi
+      - name: Validate structure
+        run: python3 scripts/matrix.py validate --structure
+      - name: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bump)) && 'Bump' || 'Fill' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MODE: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bump)) && 'bump' || 'fill' }}
+        run: |
+          python3 scripts/matrix.py "$MODE" --manifest "$RUNNER_TEMP/manifest.json" | tee "$RUNNER_TEMP/changes.txt"
+          echo "MODE=$MODE" >> "$GITHUB_ENV"
+      - name: Validate complete
+        run: python3 scripts/matrix.py validate --complete
+      - name: Commit and push matrix.json
+        id: commit
+        run: |
+          if git diff --quiet -- matrix.json; then
+            echo "matrix.json unchanged"
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            { echo "matrix: $MODE"; echo; cat "$RUNNER_TEMP/changes.txt"; } > "$RUNNER_TEMP/msg.txt"
+            git commit -q -F "$RUNNER_TEMP/msg.txt" -- matrix.json
+            if ! git push origin HEAD:master; then
+              git pull --rebase origin master
+              python3 scripts/matrix.py validate --complete
+              git push origin HEAD:master
+            fi
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  plan:
+    needs: bump
+    if: always() && (needs.bump.result == 'success' || needs.bump.result == 'skipped')
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      items: ${{ steps.plan.outputs.items }}
+      count: ${{ steps.plan.outputs.count }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.bump.outputs.sha || github.sha }}
+          fetch-depth: 0
+      - name: Fetch published manifest
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            git fetch --no-tags --depth 1 origin gh-pages
+            git show FETCH_HEAD:manifest.json > "$RUNNER_TEMP/manifest.json"
+          else
+            rc=$?
+            [ "$rc" = 2 ] || exit "$rc"
+            echo '{"entries":[]}' > "$RUNNER_TEMP/manifest.json"
+          fi
+      - name: Plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = pull_request ]; then
+            python3 scripts/matrix.py validate --structure
+            python3 scripts/matrix.py fill --in-memory --out "$RUNNER_TEMP/filled.json"
+            python3 scripts/matrix.py validate --complete --matrix "$RUNNER_TEMP/filled.json"
+            python3 scripts/matrix.py plan --matrix "$RUNNER_TEMP/filled.json" \
+              --manifest "$RUNNER_TEMP/manifest.json" --pr-base "origin/$BASE_REF" --github-output
+          else
+            python3 scripts/matrix.py validate --complete
+            python3 scripts/matrix.py plan --matrix matrix.json \
+              --manifest "$RUNNER_TEMP/manifest.json" --github-output
+          fi
+
+  build:
+    needs: plan
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.count != '0'
+    name: build ${{ matrix.id }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.items) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - name: Install dependencies
+        env:
+          SMOKE: ${{ matrix.smoke }}
+        run: |
+          pkgs=(build-essential gawk gettext libncurses-dev python3 rsync unzip wget file zstd bzip2 perl curl)
+          if [ "$SMOKE" = true ]; then
+            pkgs+=(qemu-system-x86 python3-pexpect)
+          fi
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends "${pkgs[@]}"
+      - name: Build
+        id: build
+        env:
+          ITEM: ${{ toJSON(matrix) }}
+          CHANNEL: ${{ matrix.channel }}
+        run: |
+          mkdir -p out
+          printf '%s\n' "$ITEM" > out/item.json
+          rc=0
+          scripts/build-one.sh --item-json "$ITEM" --out out --work "$RUNNER_TEMP/work" || rc=$?
+          case $rc in
+            0) status=ok ;;
+            3) status=stale ;;
+            *) status=failed ;;
+          esac
+          echo "$status" > out/status
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$CHANNEL" = snapshot ]; then
+            [ "$status" = ok ] || echo "::warning::snapshot build $status (exit $rc)"
+            exit 0
+          fi
+          exit "$rc"
+      - name: Smoke test
+        if: matrix.smoke && steps.build.outputs.status == 'ok'
+        env:
+          VERSION: ${{ matrix.version }}
+          KERNEL: ${{ matrix.kernel }}
+          CHANNEL: ${{ matrix.channel }}
+        run: |
+          sudo chmod 666 /dev/kvm || true
+          rc=0
+          python3 scripts/smoke-x86.py --version "$VERSION" --kernel "$KERNEL" --apk out/kmod-phantun-*.apk \
+            --apk-bin "$RUNNER_TEMP/work/sdk/staging_dir/host/bin/apk" --work "$RUNNER_TEMP/smoke" \
+            --log out/smoke-console.log > "$RUNNER_TEMP/smoke-result" || rc=$?
+          if [ "$rc" != 0 ]; then
+            echo failed > out/status
+            if [ "$CHANNEL" = snapshot ]; then
+              echo "::warning::snapshot smoke test failed"
+              exit 0
+            fi
+            exit "$rc"
+          fi
+          echo "smoke=$(cat "$RUNNER_TEMP/smoke-result")" > out/smoke
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-${{ matrix.id }}
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    needs: [plan, build]
+    if: >-
+      always() && github.event_name != 'pull_request' && needs.plan.result == 'success' &&
+      needs.plan.outputs.publish == 'true' &&
+      (needs.build.result == 'success' || needs.build.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+      - name: Cache apk-tools
+        id: apk-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apk-tools
+          key: apk-tools-${{ env.APK_TOOLS_COMMIT }}-ubuntu-24.04
+      - name: Build apk-tools
+        if: steps.apk-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends meson ninja-build libssl-dev zlib1g-dev pkg-config
+          # gitlab.alpinelinux.org answers GitHub runners with HTTP 418; use the official mirror.
+          # The commit check below pins the exact source either way.
+          git clone -q --depth 1 --branch "$APK_TOOLS_TAG" https://github.com/alpinelinux/apk-tools.git "$RUNNER_TEMP/apk-tools-src"
+          cd "$RUNNER_TEMP/apk-tools-src"
+          test "$(git rev-parse HEAD)" = "$APK_TOOLS_COMMIT"
+          meson setup build --prefix="$HOME/apk-tools" -Ddefault_library=static -Dcrypto_backend=openssl \
+            -Ddocs=disabled -Dhelp=disabled -Dlua=disabled -Dpython=disabled -Dtests=disabled -Dzstd=disabled
+          ninja -C build
+          meson install -C build
+      - name: Check apk-tools
+        run: ~/apk-tools/bin/apk --version
+      - name: Download build artifacts
+        if: needs.plan.outputs.count != '0'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: build-*
+          path: artifacts
+      - name: Check out current gh-pages
+        run: |
+          mkdir pages
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            git fetch --no-tags --depth 1 origin gh-pages
+            git archive FETCH_HEAD | tar -x -C pages
+            echo "OLD_TREE=$(git rev-parse 'FETCH_HEAD^{tree}')" >> "$GITHUB_ENV"
+          else
+            rc=$?
+            [ "$rc" = 2 ] || exit "$rc"
+            echo "OLD_TREE=" >> "$GITHUB_ENV"
+          fi
+      - name: Assemble feed
+        env:
+          ITEMS: ${{ needs.plan.outputs.items }}
+          APK_SIGNING_KEY: ${{ secrets.APK_SIGNING_KEY }}
+        run: |
+          [ -n "$APK_SIGNING_KEY" ] || { echo "::error::secret APK_SIGNING_KEY is not set"; exit 1; }
+          umask 077
+          printf '%s\n' "$APK_SIGNING_KEY" > "$RUNNER_TEMP/signing.key"
+          printf '%s\n' "${ITEMS:-[]}" > "$RUNNER_TEMP/items.json"
+          rc=0
+          python3 scripts/publish.py --matrix matrix.json --pages pages --items "$RUNNER_TEMP/items.json" \
+            --artifacts artifacts --signing-key "$RUNNER_TEMP/signing.key" --apk ~/apk-tools/bin/apk || rc=$?
+          rm -f "$RUNNER_TEMP/signing.key"
+          exit "$rc"
+      - name: Push gh-pages
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          export GIT_INDEX_FILE="$RUNNER_TEMP/pages.index"
+          git --work-tree=pages add -A .
+          tree=$(git write-tree)
+          if [ "$tree" = "$OLD_TREE" ]; then
+            echo "gh-pages tree unchanged; nothing to push"
+            exit 0
+          fi
+          commit=$(git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit-tree "$tree" -m "publish from $RUN_URL")
+          git push --force origin "$commit:refs/heads/gh-pages"
+          echo "::notice::gh-pages is now $commit"
+
+  deploy:
+    needs: [publish]
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: README.md
+      - name: Decide
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force_deploy }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            :
+          else
+            rc=$?
+            [ "$rc" = 2 ] || exit "$rc"
+            echo "::notice::no gh-pages branch yet; nothing to deploy"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch --no-tags --depth 1 origin gh-pages
+          want=$(git show FETCH_HEAD:pages-state.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["content_sha256"])')
+          url=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .html_url)
+          url=${url%/}
+          live=$(curl -fsSL -H 'Cache-Control: no-cache' "$url/pages-state.json?run=$RUN_ID" 2>/dev/null |
+            python3 -c 'import json,sys; print(json.load(sys.stdin)["content_sha256"])' 2>/dev/null) || live=
+          echo "gh-pages content_sha256: $want; live: ${live:-<unavailable>}"
+          {
+            echo "want=$want"
+            echo "url=$url"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" = true ] || [ "$live" != "$want" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "live site current"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Export gh-pages
+        if: steps.decide.outputs.deploy == 'true'
+        run: |
+          mkdir _site
+          git archive FETCH_HEAD | tar -x -C _site
+      - name: Upload Pages artifact
+        if: steps.decide.outputs.deploy == 'true'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+      - name: Deploy
+        id: deploy
+        if: steps.decide.outputs.deploy == 'true'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - name: Verify live site
+        if: steps.decide.outputs.deploy == 'true'
+        env:
+          WANT: ${{ steps.decide.outputs.want }}
+          URL: ${{ steps.decide.outputs.url }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          for i in $(seq 1 21); do
+            live=$(curl -fsSL -H 'Cache-Control: no-cache' "$URL/pages-state.json?run=$RUN_ID-$i" 2>/dev/null |
+              python3 -c 'import json,sys; print(json.load(sys.stdin)["content_sha256"])' 2>/dev/null) || live=
+            if [ "$live" = "$WANT" ]; then
+              echo "live site serves $WANT"
+              exit 0
+            fi
+            echo "attempt $i: live ${live:-<unavailable>} != $WANT"
+            sleep 30
+          done
+          echo "::error::live pages-state.json did not converge to $WANT within 10 minutes"
+          exit 1
+
+  report:
+    needs: [bump, plan, build, publish, deploy]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download build artifacts
+        if: needs.plan.outputs.count != '0' && needs.plan.outputs.count != ''
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: build-*
+          path: artifacts
+      - name: Summary
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, pathlib
+          needs = json.loads(os.environ["RESULTS"])
+          out = ["## kmod-phantun CI", "", "| job | result |", "|---|---|"]
+          out += [f"| {j} | {v['result']} |" for j, v in needs.items()]
+          rows, failed = [], []
+          # download-artifact extracts a single matched artifact directly into the path.
+          for d in sorted({f.parent for f in pathlib.Path("artifacts").glob("**/item.json")}):
+              item = json.loads((d / "item.json").read_text())
+              status = (d / "status").read_text().strip() if (d / "status").exists() else "failed"
+              smoke = (d / "smoke").read_text().strip().split("=", 1)[1] if (d / "smoke").exists() else ""
+              build = json.loads((d / "build.json").read_text()) if (d / "build.json").exists() else {}
+              rows.append(f"| {item['id']} | {item['kernel']} | {status} | {smoke} | {build.get('apk_sha256', '')} |")
+              if item["channel"] == "snapshot" and status == "failed":
+                  failed.append(item["id"])
+          if rows:
+              out += ["", "| item | kernel | status | smoke | apk sha256 |", "|---|---|---|---|---|", *rows]
+          plan = needs.get("plan", {}).get("outputs", {})
+          out += ["", f"planned items: {plan.get('count', '?')}, publish: {plan.get('publish', '?')}"]
+          pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(out) + "\n")
+          print("\n".join(out))
+          bad = [j for j, v in needs.items() if v["result"] in ("failure", "cancelled")]
+          if failed:
+              print(f"::error::snapshot items failed: {failed}")
+          if bad:
+              print(f"::error::jobs failed: {bad}")
+          if failed or bad:
+              raise SystemExit(1)
+          EOF

@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "phantun": {
+    "version": "0.6.0.1",
+    "tarball_sha256": "cebd1ae10c76dccaa4ae73bb1212996366c098a5ed4312e06a1bcd9fff72c47e",
+    "pkg_release": 1,
+    "hold": true
+  },
+  "policy": {
+    "hold_openwrt": true,
+    "build_point_releases": 1,
+    "retain_point_releases": 5,
+    "snapshot": false
+  },
+  "targets": [
+    "mediatek/filogic"
+  ],
+  "snapshot_exclude": [],
+  "releases": {
+    "25.12": {
+      "25.12.6": {
+        "mediatek/filogic": {
+          "sdk": "openwrt-sdk-25.12.6-mediatek-filogic_gcc-14.3.0_musl.Linux-x86_64.tar.zst",
+          "sdk_sha256": "1c04ac47bdfc361d6aab299eb520d570e368013dedcb8d29cf39dc7168ae642e",
+          "kernel": "6.12.112-1-f0a7348f9cb959e1bf4d0447669b031e",
+          "arch": "aarch64_cortex-a53",
+          "version_code": "r33311-981c978eff"
+        }
+      }
+    }
+  },
+  "snapshot": {}
+}

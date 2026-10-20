@@ -1,0 +1,4 @@
+/work/
+/out/
+*.key
+__pycache__/
