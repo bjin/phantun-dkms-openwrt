@@ -355,9 +355,6 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site
-      - name: Injected failure (recovery test, revert me)
-        if: steps.decide.outputs.deploy == 'true'
-        run: exit 1
       - name: Deploy
         id: deploy
         if: steps.decide.outputs.deploy == 'true'
