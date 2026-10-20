@@ -351,19 +351,21 @@ flowchart LR
 
 ## Rollout
 
+Both phases are complete (2026-10-20); new targets now go through targets-only PRs.
+
 - **Phase 1**: 25.12.6 × `mediatek/filogic` only, phantun-dkms 0.6.0.1,
-  `phantun.hold` and `policy.hold_openwrt` true, `build_point_releases` 1, `snapshot` false.
-  Phase 2 starts only after the maintainer has verified the package on real hardware.
+  `phantun.hold` and `policy.hold_openwrt` true, `build_point_releases` 1, `snapshot` false,
+  until the maintainer verified the package on real hardware.
 - **Phase 2**, each step a green PR + green run before the next:
   1. `hold_openwrt: false`, `build_point_releases: 2`, `phantun.hold: false`; then dispatch with
-     `bump=true` (adds 25.12.5: one build).
+     `bump=true` (added 25.12.5: one build).
   2. Targets-only PR adding `x86/64`, `ramips/mt7621`, `ath79/generic`, `qualcommax/ipq807x`,
      `mediatek/mt7622`, `ipq40xx/generic`, `qualcommax/ipq50xx`, `bcm27xx/bcm2712`,
      `rockchip/armv8` (18 builds after merge; first x86/64 smoke test in CI). Next in line:
      `qualcommax/ipq60xx`, `ramips/mt7620`, `ramips/mt76x8`, `bcm27xx/bcm2711`,
      `ipq40xx/chromium`, `armsr/armv8`.
-  3. `policy.snapshot: true`. Requires a stable phantun-dkms release containing commit `bfaa751`
-     (`timer_container_of` probe fix for `-Werror` kernels ≥ 6.16); 0.6.0.1 contains it.
+  3. `policy.snapshot: true` (needs phantun-dkms ≥ 0.6.0.1: commit `bfaa751`, the
+     `timer_container_of` probe fix for `-Werror` kernels ≥ 6.16).
 
 ## Local development
 

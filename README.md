@@ -11,10 +11,13 @@ install it with plain `apk add kmod-phantun`.
 
 ## What is available
 
-- OpenWrt **25.12 and later** (apk-based releases) and, later, main **SNAPSHOT**. OpenWrt 24.10 and
-  older (opkg/ipk) are not supported.
-- A fixed list of targets. **Right now only OpenWrt 25.12.6 `mediatek/filogic`** is published
-  while the first package is tested on real hardware; more targets and versions follow.
+- OpenWrt **25.12 and later** (apk-based releases) and main **SNAPSHOT**. OpenWrt 24.10 and older
+  (opkg/ipk) are not supported.
+- Targets (the `targets` list in `matrix.json` is authoritative): `ath79/generic`,
+  `bcm27xx/bcm2712`, `ipq40xx/generic`, `mediatek/filogic`, `mediatek/mt7622`,
+  `qualcommax/ipq50xx`, `qualcommax/ipq807x`, `ramips/mt7621`, `rockchip/armv8`, `x86/64`.
+- New stable point releases are built as they appear (currently 25.12.5 and 25.12.6), and
+  SNAPSHOT for every target as its kernel changes.
 
 The web page lists every published package; `manifest.json` next to it is the machine-readable
 list.
