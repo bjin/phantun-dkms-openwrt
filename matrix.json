@@ -26,6 +26,15 @@
           "arch": "aarch64_cortex-a53",
           "version_code": "r33311-981c978eff"
         }
+      },
+      "25.12.5": {
+        "mediatek/filogic": {
+          "sdk": "openwrt-sdk-25.12.5-mediatek-filogic_gcc-14.3.0_musl.Linux-x86_64.tar.zst",
+          "sdk_sha256": "ff4a38a397caa2cfe1c39e18f84ddede14878221b3593c3f2c4cfe24e3ec4c25",
+          "kernel": "6.12.94-1-5a6c1f71be683ae9980b15d3ce73e24d",
+          "arch": "aarch64_cortex-a53",
+          "version_code": "r33051-f5dae5ece4"
+        }
       }
     }
   },
