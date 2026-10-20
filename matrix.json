@@ -13,7 +13,16 @@
     "snapshot": false
   },
   "targets": [
-    "mediatek/filogic"
+    "ath79/generic",
+    "bcm27xx/bcm2712",
+    "ipq40xx/generic",
+    "mediatek/filogic",
+    "mediatek/mt7622",
+    "qualcommax/ipq50xx",
+    "qualcommax/ipq807x",
+    "ramips/mt7621",
+    "rockchip/armv8",
+    "x86/64"
   ],
   "snapshot_exclude": [],
   "releases": {
