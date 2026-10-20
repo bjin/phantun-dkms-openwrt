@@ -10,7 +10,7 @@
     "hold_openwrt": false,
     "build_point_releases": 2,
     "retain_point_releases": 5,
-    "snapshot": false
+    "snapshot": true
   },
   "targets": [
     "ath79/generic",
