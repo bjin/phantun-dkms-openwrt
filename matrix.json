@@ -173,5 +173,76 @@
       }
     }
   },
-  "snapshot": {}
+  "snapshot": {
+    "ath79/generic": {
+      "sdk": "openwrt-sdk-ath79-generic_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
+      "sdk_sha256": "36214ae5735f678a1176ab741e4e6756572f56f16b73406fb654519145067440",
+      "kernel": "6.18.55-1-0a983ed14989d72231f2edfe435f776a",
+      "arch": "mips_24kc",
+      "version_code": "r37507-4e16c2ed8f"
+    },
+    "bcm27xx/bcm2712": {
+      "sdk": "openwrt-sdk-bcm27xx-bcm2712_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
+      "sdk_sha256": "63b2e6091dd389d19543fc0ceb96de174370a72d45bd16a735d89a8874e31191",
+      "kernel": "6.18.55-1-e322d273ff4e4ba9fecba012c7627502",
+      "arch": "aarch64_cortex-a76",
+      "version_code": "r37524-6985585f0a"
+    },
+    "ipq40xx/generic": {
+      "sdk": "openwrt-sdk-ipq40xx-generic_gcc-14.4.0_musl_eabi.Linux-x86_64.tar.zst",
+      "sdk_sha256": "0201fcb46be9f6487d794c103c23bec029da41fc8dc72d179bd04026d0cc2718",
+      "kernel": "6.18.55-1-2ad29c1ba2cd903dd7727785ee97d771",
+      "arch": "arm_cortex-a7_neon-vfpv4",
+      "version_code": "r37507-4e16c2ed8f"
+    },
+    "mediatek/filogic": {
+      "sdk": "openwrt-sdk-mediatek-filogic_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
+      "sdk_sha256": "5920dcf6e8c27b6fe528f70d6b9a2df5d8c95c755b4a2232af1295ad993e9cb4",
+      "kernel": "6.18.55-1-b77d101e619350ca3cb1bbbd18dd64d1",
+      "arch": "aarch64_cortex-a53",
+      "version_code": "r37525-102f4eebca"
+    },
+    "mediatek/mt7622": {
+      "sdk": "openwrt-sdk-mediatek-mt7622_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
+      "sdk_sha256": "fb8d39945dbed4c7dd43061cd538f1e1a28903db0929ed3f19bab55aca868ed9",
+      "kernel": "6.18.55-1-79581675db177ed3727543d1e433bc37",
+      "arch": "aarch64_cortex-a53",
+      "version_code": "r37524-6985585f0a"
+    },
+    "qualcommax/ipq50xx": {
+      "sdk": "openwrt-sdk-qualcommax-ipq50xx_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
+      "sdk_sha256": "b180b9aad58314488e4265c5fee90ce2f23e21081744864e926c8a6ea5a13aeb",
+      "kernel": "6.18.55-1-93ef0a8c2e4472ce7c070aeaa733b952",
+      "arch": "aarch64_cortex-a53",
+      "version_code": "r37507-4e16c2ed8f"
+    },
+    "qualcommax/ipq807x": {
+      "sdk": "openwrt-sdk-qualcommax-ipq807x_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
+      "sdk_sha256": "8339ef836fc5dffc4df2e80ea7c71c47812d007ce155af492053b6d0d7eb042e",
+      "kernel": "6.18.55-1-8356e934f8a27695c307f3851be4c8e6",
+      "arch": "aarch64_cortex-a53",
+      "version_code": "r37507-4e16c2ed8f"
+    },
+    "ramips/mt7621": {
+      "sdk": "openwrt-sdk-ramips-mt7621_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
+      "sdk_sha256": "e55a31c596b407d98894b84e25e7f30e6ccf6b25b96d294b15c0c536dd21453f",
+      "kernel": "6.18.55-1-fca4cbd3125d41f709b09e63bf5f74c4",
+      "arch": "mipsel_24kc",
+      "version_code": "r37507-4e16c2ed8f"
+    },
+    "rockchip/armv8": {
+      "sdk": "openwrt-sdk-rockchip-armv8_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
+      "sdk_sha256": "e898ca93fd2fe4a0d6f40e8ce5fa7bcc69a2bb26f7ef35356fc1063823c42c41",
+      "kernel": "6.18.55-1-f823cf0e9c9cafba61f853445f50815b",
+      "arch": "aarch64_generic",
+      "version_code": "r37525-102f4eebca"
+    },
+    "x86/64": {
+      "sdk": "openwrt-sdk-x86-64_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
+      "sdk_sha256": "13fce588a009093746aeece8b452d4b00fde400b0962e9783fbd733f6135878e",
+      "kernel": "6.18.55-1-3c70f1b7fe6a289e96043b127dd7d0a3",
+      "arch": "x86_64",
+      "version_code": "r37507-4e16c2ed8f"
+    }
+  }
 }
