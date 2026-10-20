@@ -190,10 +190,10 @@
     },
     "ipq40xx/generic": {
       "sdk": "openwrt-sdk-ipq40xx-generic_gcc-14.4.0_musl_eabi.Linux-x86_64.tar.zst",
-      "sdk_sha256": "0201fcb46be9f6487d794c103c23bec029da41fc8dc72d179bd04026d0cc2718",
-      "kernel": "6.18.55-1-2ad29c1ba2cd903dd7727785ee97d771",
+      "sdk_sha256": "62459be5f7422da6f19d7e16075676b8e776aeb17b06ebacfbff5a27bb503057",
+      "kernel": "6.18.55-1-ddb6f53fe33e0118dc1853082fe07310",
       "arch": "arm_cortex-a7_neon-vfpv4",
-      "version_code": "r37507-4e16c2ed8f"
+      "version_code": "r37526-0d245fdaea"
     },
     "mediatek/filogic": {
       "sdk": "openwrt-sdk-mediatek-filogic_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
