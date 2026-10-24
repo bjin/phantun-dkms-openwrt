@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import html
 import json
 import shutil
 import subprocess
@@ -24,9 +23,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (  # noqa: E402
     APK_PUBKEY, Fatal, apk_path, entry_key, load_json, log, retention, sha256_file, sort_entries,
 )
+from webpage import render_index  # noqa: E402
 
 ROOT_FILES = ("index.html", "phantun-openwrt.pem", "manifest.json", "pages-state.json")
-PAGES_URL = "https://bjin.github.io/phantun-dkms-openwrt"
 MAX_TREE_BYTES = 500 * 1024 * 1024
 MANIFEST_SCHEMA = 2
 ENTRY_FIELDS = ("channel", "series", "version", "target", "kernel", "arch", "version_code",
@@ -169,62 +168,6 @@ def remove_empty_dirs(pages: Path) -> None:
             d.rmdir()
 
 
-def render_index(entries: list[dict], pem_sha256: str) -> str:
-    def row(e):
-        return ("<tr>" + "".join(f"<td>{html.escape(str(v))}</td>" for v in (
-            e["version"], e["target"], e["kernel"], e["arch"], e["version_code"]))
-            + f'<td><a href="{html.escape(e["path"])}">kmod-phantun {html.escape(e["path"].rsplit("/kmod-phantun-", 1)[1][:-4])}</a></td>'
-            + f'<td><a href="{html.escape(e["path"].rsplit("/", 1)[0])}/packages.adb">packages.adb</a></td></tr>')
-    rel = [e for e in entries if e["channel"] == "release"]
-    snap = [e for e in entries if e["channel"] == "snapshot"]
-    head = ("<tr><th>OpenWrt</th><th>Target</th><th>Kernel</th><th>Arch</th><th>Revision</th>"
-            "<th>Package</th><th>Index</th></tr>")
-    table = lambda es: (f"<table>{head}{''.join(row(e) for e in es)}</table>" if es  # noqa: E731
-                        else "<p>None.</p>")
-    setup = f"""BASE={PAGES_URL}
-uclient-fetch -O /etc/apk/keys/phantun-openwrt.pem "$BASE/phantun-openwrt.pem"
-sha256sum /etc/apk/keys/phantun-openwrt.pem   # must print {pem_sha256}
-sed -nE "s#^.*/((releases|snapshots)/.*/kmods/[^/]+/packages\\.adb)\\$#$BASE/\\1#p" \\
-    /etc/apk/repositories.d/distfeeds.list > /etc/apk/repositories.d/phantun.list
-apk update && apk add kmod-phantun
-insmod phantun managed_local_ports=51820   # parameters: see the phantun-dkms README"""
-    phv = sorted({(e["phantun_version"], e["pkg_release"]) for e in entries})
-    phs = ", ".join(f"{v} (package release r{r})" for v, r in phv) or "none"
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>kmod-phantun feeds for OpenWrt</title>
-<style>
-body {{ font-family: sans-serif; max-width: 72em; margin: 2em auto; padding: 0 1em; }}
-pre {{ background: #f4f4f4; padding: 1em; overflow-x: auto; }}
-table {{ border-collapse: collapse; }}
-td, th {{ border: 1px solid #ccc; padding: 0.2em 0.5em; text-align: left; font-size: 90%; }}
-</style>
-</head>
-<body>
-<h1>kmod-phantun feeds for OpenWrt</h1>
-<p>Signed apk feeds with the <a href="https://github.com/bjin/phantun-dkms">phantun-dkms</a> kernel
-module for stock OpenWrt firmware (25.12 and later). Built by
-<a href="https://github.com/bjin/phantun-dkms-openwrt">bjin/phantun-dkms-openwrt</a>.
-phantun-dkms version: {html.escape(phs)}. Package versions read
-<code>&lt;kernel version&gt;.&lt;phantun-dkms version&gt;-r&lt;package release&gt;</code>; the
-package release only changes when this repository changes how the same phantun-dkms version is
-packaged.</p>
-<h2>Router setup</h2>
-<pre>{html.escape(setup)}</pre>
-<p>The module only installs when the router runs exactly a (version, target, kernel) listed below.
-After every firmware upgrade, regenerate <code>phantun.list</code> with the same command and
-reinstall. Public key sha256: <code>{pem_sha256}</code>.</p>
-<h2>Stable releases</h2>
-{table(rel)}
-<h2>SNAPSHOT</h2>
-{table(snap)}
-</body>
-</html>
-"""
-
-
 def publish(args) -> bool:
     matrix = load_json(args.matrix)
     apk_bin = shutil.which(args.apk)
@@ -314,7 +257,7 @@ def publish(args) -> bool:
                 "entries": [{k: e[k] for k in ENTRY_FIELDS if k in e} for e in entries]}
     manifest_file.write_text(json.dumps(manifest, indent=2) + "\n")
     shutil.copyfile(pubkey, pages_pem)
-    (pages / "index.html").write_text(render_index(entries, pubkey_sha256))
+    (pages / "index.html").write_text(render_index(entries, pubkey_sha256, matrix["targets"]))
     state = content_sha256(pages)
     (pages / "pages-state.json").write_text(json.dumps({"content_sha256": state}, indent=2) + "\n")
 

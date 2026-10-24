@@ -23,7 +23,7 @@ from common import (  # noqa: E402
     dump_matrix, entry_key, fetch_release_targets, fetch_versions, http_get, load_json, log, notice,
     pin_equal, retention, series_of, sha256_file, version_key, write_github_output,
 )
-from publish import render_index  # noqa: E402
+from webpage import render_index  # noqa: E402
 
 DEFAULT_MATRIX = REPO_ROOT / "matrix.json"
 TOP_KEYS = {"schema", "phantun", "policy", "targets", "snapshot_exclude", "releases", "snapshot"}
@@ -588,7 +588,14 @@ def cmd_plan(args) -> int:
         publish = False
     else:
         published = {tuple(entry_key(e)) for e in entries}
-        items = [it for it in desired_items(m) if item_key(it) not in published]
+        missing = [it for it in desired_items(m) if item_key(it) not in published]
+        if args.site_only:
+            # A push that only changed the feed page: render and deploy it, never build.
+            if missing:
+                log(f"site-only: {len(missing)} missing item(s) left for the next full run")
+            items = []
+        else:
+            items = missing
         _, deleted = retention(entries, m)
         for e, why in deleted:
             log(f"would prune {e['path']}: {why}")
@@ -596,9 +603,9 @@ def cmd_plan(args) -> int:
         if resign:
             log("would re-sign every APK and index: manifest.json pubkey_sha256 != --pubkey")
         stale_page = bool(args.index) and bool(entries) and Path(args.index).read_text() != render_index(
-            entries, sha256_file(Path(args.pubkey)))
+            entries, sha256_file(Path(args.pubkey)), m["targets"])
         if stale_page:
-            log("would regenerate index.html: it differs from what publish.py renders")
+            log("would regenerate index.html: it differs from what webpage.py renders")
         publish = bool(items) or bool(deleted) or resign or stale_page
     if len(items) > MAX_ITEMS:
         raise Fatal(f"{len(items)} build items > {MAX_ITEMS}")
@@ -640,7 +647,9 @@ def main() -> int:
     p.add_argument("--matrix", default=str(DEFAULT_MATRIX))
     p.add_argument("--manifest", required=True)
     p.add_argument("--pubkey", default=str(APK_PUBKEY), help="public key the feed must be signed with")
-    p.add_argument("--index", help="published index.html; publish when publish.py would render it differently")
+    p.add_argument("--index", help="published index.html; publish when webpage.py would render it differently")
+    p.add_argument("--site-only", action="store_true",
+                   help="no build items: the push only changed the feed page (web/, scripts/webpage.py)")
     p.add_argument("--pr-base", help="git ref of the PR base (PR mode)")
     p.add_argument("--pr-title", help="PR title (default: $PR_TITLE)")
     p.add_argument("--github-output", action="store_true", help="also write items/count/publish to $GITHUB_OUTPUT")
@@ -648,6 +657,8 @@ def main() -> int:
     args = ap.parse_args()
     if args.cmd == "fill" and args.in_memory and not args.out:
         ap.error("fill --in-memory requires --out")
+    if args.cmd == "plan" and args.site_only and args.pr_base:
+        ap.error("plan --site-only is for pushes, not with --pr-base")
     try:
         if args.cmd == "validate":
             return cmd_validate(args)

@@ -18,6 +18,8 @@ scripts/
   build-one.sh                     build one item with the official SDK (CI and humans)
   smoke-x86.py                     QEMU install/load test for x86/64 items
   publish.py                       assemble the gh-pages tree
+  webpage.py                       render the feed page index.html (also a local preview tool)
+web/                               feed page sources: index.html template, style.css, script.js
 .github/workflows/ci.yml           the only workflow
 ```
 
@@ -176,16 +178,19 @@ Subcommands:
      part of the run continue.
 
   Prints one line per change (used as the commit message body).
-- `plan --matrix F --manifest F [--pubkey PEM] [--index HTML] [--pr-base REF --pr-title T]
-  [--github-output]`: build items as JSON (each carries its pin and phantun fields, an `id` such as
-  `release-25.12.6-mediatek-filogic` or `snapshot-x86-64`, and `smoke` for `x86/64`).
+- `plan --matrix F --manifest F [--pubkey PEM] [--index HTML] [--site-only] [--pr-base REF
+  --pr-title T] [--github-output]`: build items as JSON (each carries its pin and phantun fields,
+  an `id` such as `release-25.12.6-mediatek-filogic` or `snapshot-x86-64`, and `smoke` for
+  `x86/64`).
   - Non-PR: every non-null release pin and (if enabled) snapshot pin whose
     (channel, version, target, kernel, phantun version, pkg_release) is not in the manifest.
     `publish` is true when there are items, the retention dry-run would prune something, the
     manifest's `pubkey_sha256` is not the sha256 of `--pubkey` (default
     `keys/phantun-openwrt.pem`: key rotation, or a feed published before APKs were signed), or the
-    published `--index` differs from what `publish.py` renders from the manifest (page template
-    changed).
+    published `--index` differs from what `webpage.py` renders from the manifest and the matrix's
+    `targets` (page sources or targets changed).
+  - `--site-only` (a push that only changed the feed page): no items, missing ones are left for
+    the next full run; `publish` as above.
   - PR (`--pr-base`): targets added or with changed pins → newest listed point release of every
     series (+ SNAPSHOT if enabled); recipe or `build-one.sh` changed → every target for the newest
     point release + SNAPSHOT for `mediatek/filogic` and `x86/64`; otherwise nothing. Never
@@ -271,6 +276,31 @@ content without signatures and compression is identical: `apk adbsign --allow-un
 `pages-state.json` = `{"content_sha256": sha256 over sorted "<path>\0<file sha256>\n" of every
 other file}`: the deploy job's "is the live site current?" token.
 
+### Feed page (`web/`, `scripts/webpage.py`)
+
+`index.html` is one self-contained file: `webpage.py` fills the `@NAME@` placeholders of
+`web/index.html` (a placeholder the renderer does not know, or one it fills that the template
+lacks, is an error) and inlines `web/style.css` and `web/script.js` unminified. No external
+resources: system fonts only (`system-ui`, `ui-monospace`), icons are inline SVG symbols. The
+setup commands are literal in the template, HTML-escaped; only the key sha256 is filled in.
+
+- Tables are generated from the manifest entries: newest point release first, then SNAPSHOT
+  grouped by target, newest kernel first. Above 1080 px they are tables; below, each row is a card.
+- Targets section: one tile per entry of `matrix.json`'s `targets` (the only source; arch from the
+  manifest, "no packages yet" without entries) and a link to open an issue for a missing one. The
+  filter has two states: all targets selected (initial) or exactly one. Clicking a tile selects only
+  it; clicking the selected tile or "Show all targets" selects all again. With one selected, only
+  its table rows are shown, groups left empty are hidden, and each section says so when nothing
+  is left. The state is not saved.
+- Theme: light and dark palettes are CSS variables on `:root` and `:root[data-theme="dark"]`. The
+  script runs in `<head>` and sets `data-theme` before the first paint: the choice saved in
+  `localStorage["theme"]` by the top-right toggle, else the browser's `prefers-color-scheme`
+  (followed live until the user picks). Without JavaScript the page is light and the toggle and
+  copy button are hidden.
+- Deterministic like every generated file. Preview locally:
+  `curl -fsSo work/manifest.json https://bjin.github.io/phantun-dkms-openwrt/manifest.json &&
+  python3 scripts/webpage.py --manifest work/manifest.json --out work/index.html`.
+
 ### `scripts/publish.py`
 
 Inputs: `matrix.json`, the current tree (exported from `gh-pages`), the plan items and the build
@@ -297,7 +327,7 @@ artifacts (`item.json`, `status`, and on success `build.json` + APK). Steps:
    (ECDSA signatures are randomized; re-signing everything would change the tree on every run), or
    in every directory after step 5. The index is built from the signed APKs (it records their
    size) and checked with `apk --root <tmp> verify`.
-7. Write `manifest.json`, `index.html`, `phantun-openwrt.pem`, `pages-state.json` —
+7. Write `manifest.json`, `index.html` (`webpage.py`), `phantun-openwrt.pem`, `pages-state.json` —
    deterministic (no timestamps), so an unchanged input gives a byte-identical tree.
 8. Sanity: APKs on disk == manifest (paths and sha256), exactly one APK + index per kmods
    directory, no stray files, total < 500 MB.
@@ -313,12 +343,13 @@ GitHub mirror `alpinelinux/apk-tools` because gitlab.alpinelinux.org rejects Git
 |---|---|
 | `schedule` 04:23 UTC daily | `bump`, build, publish, deploy |
 | `workflow_dispatch` (`bump`, `force_deploy`) | `bump=false` runs `fill` only; `force_deploy` redeploys gh-pages |
-| `push` to `master` touching `matrix.json`, `openwrt/**`, `scripts/**`, `keys/**`, the workflow | `fill`, build missing, publish, deploy |
-| `pull_request` (same paths) | validate and test-build, never publish |
+| `push` to `master` touching `matrix.json`, `openwrt/**`, `scripts/**`, `keys/**`, `web/**`, the workflow | `fill`, build missing, publish, deploy |
+| `push` to `master` touching only `web/**` and `scripts/webpage.py` | site-only: no `fill`, no builds; publish re-renders `index.html`, deploy |
+| `pull_request` (same paths) | validate, test-build, render the page; never publish |
 
 ```mermaid
 flowchart LR
-  bump["bump (not PR)<br/>bump or fill → validate --complete<br/>commit matrix.json to master"] --> plan
+  bump["bump (not PR; skipped steps on a site-only push)<br/>bump or fill → validate --complete<br/>commit matrix.json to master"] --> plan
   plan["plan<br/>items = desired − manifest<br/>PR: structure → fill --in-memory → complete → plan --pr-base"] --> build
   build["build (matrix, fail-fast off, ≤20 parallel)<br/>build-one.sh (+ smoke-x86.py)<br/>artifact build-&lt;id&gt;"] --> publish
   publish["publish (not PR)<br/>publish.py → orphan commit → force-push gh-pages"] --> deploy
@@ -328,6 +359,11 @@ flowchart LR
 
 - Pushes made with `GITHUB_TOKEN` (bump commit, gh-pages) do not trigger workflows: no loops;
   the bump commit and its build happen in the same run.
+- Site-only push: the `bump` job diffs `github.event.before..github.sha`; if every changed path is
+  under `web/` or is `scripts/webpage.py`, it skips fetch/fill/validate/commit and `plan` runs with
+  `--site-only`, so the run builds nothing (not even items still missing from an earlier failed
+  run) and `publish` adds no APK: it re-renders the page. An unknown `before` (new branch, force
+  push) means a full run. Schedule and dispatch runs are always full.
 - Failure policy: any failed **release** item fails `build`, so `publish` does not run and Pages is
   unchanged; the next run retries everything missing. SNAPSHOT items never fail `build`: their step
   records `stale`/`failed` in the artifact and exits 0; `publish` takes the `ok` ones and `report`
@@ -416,6 +452,7 @@ python3 scripts/smoke-x86.py --version 25.12.6 --kernel <pin kernel> --apk work/
     --apk-bin work/build/sdk/staging_dir/host/bin/apk --work work/smoke --log work/smoke/console.log
 python3 scripts/publish.py --matrix matrix.json --pages work/pages --items items.json \
     --artifacts work/artifacts --signing-key test.key --pubkey test.pem --apk work/apk-tools/bin/apk
+python3 scripts/webpage.py --manifest work/pages/manifest.json --out work/index.html
 actionlint .github/workflows/ci.yml && shellcheck scripts/build-one.sh
 ```
 

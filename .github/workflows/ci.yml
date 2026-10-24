@@ -20,6 +20,7 @@ on:
       - 'openwrt/**'
       - 'scripts/**'
       - 'keys/**'
+      - 'web/**'
       - .github/workflows/ci.yml
   pull_request:
     paths:
@@ -27,6 +28,7 @@ on:
       - 'openwrt/**'
       - 'scripts/**'
       - 'keys/**'
+      - 'web/**'
       - .github/workflows/ci.yml
 
 permissions:
@@ -48,12 +50,30 @@ jobs:
       contents: write
     outputs:
       sha: ${{ steps.commit.outputs.sha }}
+      site_only: ${{ steps.scope.outputs.site_only }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: master
           fetch-depth: 0
+      - name: Classify push
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # A push that only changes the feed page (web/, scripts/webpage.py) is a website update:
+          # no fill, no matrix commit, no builds; plan --site-only, publish re-renders, deploy.
+          site_only=false
+          if [ "$EVENT" = push ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            changed=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
+            if [ -n "$changed" ] && ! grep -qvE '^(web/|scripts/webpage\.py$)' <<<"$changed"; then
+              site_only=true
+            fi
+          fi
+          echo "site_only=$site_only" | tee -a "$GITHUB_OUTPUT"
       - name: Fetch published manifest
+        if: steps.scope.outputs.site_only != 'true'
         run: |
           if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
             git fetch --no-tags --depth 1 origin gh-pages
@@ -65,8 +85,10 @@ jobs:
             echo '{"entries":[]}' > "$RUNNER_TEMP/manifest.json"
           fi
       - name: Validate structure
+        if: steps.scope.outputs.site_only != 'true'
         run: python3 scripts/matrix.py validate --structure
       - name: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bump)) && 'Bump' || 'Fill' }}
+        if: steps.scope.outputs.site_only != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           MODE: ${{ (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bump)) && 'bump' || 'fill' }}
@@ -74,9 +96,11 @@ jobs:
           python3 scripts/matrix.py "$MODE" --manifest "$RUNNER_TEMP/manifest.json" | tee "$RUNNER_TEMP/changes.txt"
           echo "MODE=$MODE" >> "$GITHUB_ENV"
       - name: Validate complete
+        if: steps.scope.outputs.site_only != 'true'
         run: python3 scripts/matrix.py validate --complete
       - name: Commit and push matrix.json
         id: commit
+        if: steps.scope.outputs.site_only != 'true'
         run: |
           if git diff --quiet -- matrix.json; then
             echo "matrix.json unchanged"
@@ -125,6 +149,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
+          SITE_ONLY: ${{ needs.bump.outputs.site_only }}
         run: |
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = pull_request ]; then
@@ -133,10 +158,15 @@ jobs:
             python3 scripts/matrix.py validate --complete --matrix "$RUNNER_TEMP/filled.json"
             python3 scripts/matrix.py plan --matrix "$RUNNER_TEMP/filled.json" \
               --manifest "$RUNNER_TEMP/manifest.json" --pr-base "origin/$BASE_REF" --github-output
+            python3 scripts/webpage.py --manifest "$RUNNER_TEMP/manifest.json" --out "$RUNNER_TEMP/page.html"
           else
+            site_only=()
+            if [ "$SITE_ONLY" = true ]; then
+              site_only=(--site-only)
+            fi
             python3 scripts/matrix.py validate --complete
-            python3 scripts/matrix.py plan --matrix matrix.json \
-              --manifest "$RUNNER_TEMP/manifest.json" --index "$RUNNER_TEMP/index.html" --github-output
+            python3 scripts/matrix.py plan --matrix matrix.json --manifest "$RUNNER_TEMP/manifest.json" \
+              --index "$RUNNER_TEMP/index.html" --github-output "${site_only[@]}"
           fi
 
   build:
