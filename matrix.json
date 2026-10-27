@@ -197,31 +197,31 @@
     },
     "mediatek/filogic": {
       "sdk": "openwrt-sdk-mediatek-filogic_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "8015d4e3a51da3059c6b72af79785f98bcc7e564456920dd396e66e049d74abf",
-      "kernel": "6.18.55-1-f98ecb9e161c2bffda404274fabb6702",
+      "sdk_sha256": "1ffc5971831ea14b24822490793b4330d8ef6dc685a89cc3063dc7ffe109f2c8",
+      "kernel": "6.18.55-1-d74ab7d5c16c78da78efadc819a9c6e1",
       "arch": "aarch64_cortex-a53",
-      "version_code": "r37652-5192094fd6"
+      "version_code": "r37744-7d0bf92bee"
     },
     "mediatek/mt7622": {
       "sdk": "openwrt-sdk-mediatek-mt7622_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "485c5d9961931f3ad32ff756ea56fb36e8e68e1ff13cb72f33bc67d1819f6cc0",
-      "kernel": "6.18.55-1-a2f80bb99571a79d255e9be5985d4897",
+      "sdk_sha256": "583121177ff50d68eb225144b07cec63b4e74994f1cacd5acb6ce6c21e8b5885",
+      "kernel": "6.18.55-1-fde6797c51aea0884919231eeae230ed",
       "arch": "aarch64_cortex-a53",
-      "version_code": "r37652-5192094fd6"
+      "version_code": "r37744-7d0bf92bee"
     },
     "qualcommax/ipq50xx": {
       "sdk": "openwrt-sdk-qualcommax-ipq50xx_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "e53d9606499a34fa29d8fe2fa62c2ab690353cad4798de81441a636fb20b116a",
-      "kernel": "6.18.55-1-ad1e5aee9f1dffd79ef5c56569836d4e",
+      "sdk_sha256": "1a429fce804ccb9c78f8b4d7ba1b479fec1a6b45a83a7ef35e41b09b8aaefbc9",
+      "kernel": "6.18.55-1-f5cda1d277b9e996962a0c22ef8e48cf",
       "arch": "aarch64_cortex-a53",
-      "version_code": "r37652-5192094fd6"
+      "version_code": "r37744-7d0bf92bee"
     },
     "qualcommax/ipq807x": {
       "sdk": "openwrt-sdk-qualcommax-ipq807x_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "3cb70d64fce28b8b58881f8756abd52285c781c31915e7a7bd69522ff2806c19",
-      "kernel": "6.18.55-1-0f1fd8125af82259ed43ee43791ec29f",
+      "sdk_sha256": "7022400d1196d1dd01bbfbe7ec3df55f5d397c7fa08d21f3efacea440d963d2b",
+      "kernel": "6.18.55-1-c2e19c2499f6f1b239819d4c5736f804",
       "arch": "aarch64_cortex-a53",
-      "version_code": "r37652-5192094fd6"
+      "version_code": "r37744-7d0bf92bee"
     },
     "ramips/mt7621": {
       "sdk": "openwrt-sdk-ramips-mt7621_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
