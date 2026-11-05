@@ -176,10 +176,10 @@
   "snapshot": {
     "ath79/generic": {
       "sdk": "openwrt-sdk-ath79-generic_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "a90bb6de7740a579173a0336bb3c8e662d309a19f02457116414ac398dad10d8",
-      "kernel": "6.18.60-1-cd293e37c4a10fa8e7b9e037a558de20",
+      "sdk_sha256": "dcde84bd0e446b40f81f31fc2f2273d98308315156648b15b7add17f9b99af3c",
+      "kernel": "6.18.60-1-cfa7826eec2ef4669ccad8846a88145b",
       "arch": "mips_24kc",
-      "version_code": "r38096-dfb167123f"
+      "version_code": "r38133-b455c5b851"
     },
     "bcm27xx/bcm2712": {
       "sdk": "openwrt-sdk-bcm27xx-bcm2712_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
