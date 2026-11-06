@@ -232,10 +232,10 @@
     },
     "rockchip/armv8": {
       "sdk": "openwrt-sdk-rockchip-armv8_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "713f8342a8ced105bcfdbef65f13db5783d07f11d6264ffdaa052b7b2fe59d01",
-      "kernel": "6.18.60-1-f65ceadb312b993e8d0aa40aa8df9f1a",
+      "sdk_sha256": "2d93db9fbd1bc7057d128afd6a40d6f57101b6ab89ebcb9971f527dfa939c592",
+      "kernel": "6.18.60-1-773b2ef21d27a10e2e209c7f2ff20fa3",
       "arch": "aarch64_generic",
-      "version_code": "r38095-df5dc61652"
+      "version_code": "r38150-bb8054e847"
     },
     "x86/64": {
       "sdk": "openwrt-sdk-x86-64_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
