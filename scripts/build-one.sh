@@ -99,12 +99,9 @@ if [[ $channel == release ]]; then
 		"https://openwrt.pixeldeck.net/releases/$version/targets/$target"
 		"https://ftp.halifax.rwth-aachen.de/openwrt/releases/$version/targets/$target"
 		"https://ftp.snt.utwente.nl/pub/software/openwrt/releases/$version/targets/$target"
-		"https://mirror-03.infra.openwrt.org/releases/$version/targets/$target"
 		"https://archive.openwrt.org/releases/$version/targets/$target")
 else
-	bases=("https://downloads.openwrt.org/snapshots/targets/$target"
-		"https://mirror-03.infra.openwrt.org/snapshots/targets/$target"
-		"https://mirror.berlin.freifunk.net/downloads.openwrt.org/snapshots/targets/$target")
+	bases=("https://downloads.openwrt.org/snapshots/targets/$target")
 fi
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 log "item $channel $version $target kernel $kernel -> kmod-phantun $apk_version"
@@ -158,8 +155,7 @@ if [[ -n $cache && -f $cache/$sdk ]] && echo "$sdk_sha256  $cache/$sdk" | sha256
 else
 	rm -f "$sdk_tar"
 	got=
-	verified=
-	actual=
+	downloaded=
 	for base in "${bases[@]}"; do
 		status=$(http_status "$base/$sdk")
 		if [[ $status == 404 ]]; then
@@ -168,25 +164,18 @@ else
 		fi
 		got=1
 		log "downloading $base/$sdk"
-		if ! curl_get "$base/$sdk" "$sdk_tar" keep; then
-			log "$base/$sdk: download failed, trying next mirror"
-			continue
-		fi
-		actual=$(sha256sum "$sdk_tar" | cut -d' ' -f1)
-		if [[ $actual == "$sdk_sha256" ]]; then
-			verified=1
+		if curl_get "$base/$sdk" "$sdk_tar" keep; then
+			downloaded=1
 			break
 		fi
-		log "$base/$sdk: sha256 $actual != pinned $sdk_sha256"
-		rm -f "$sdk_tar"
+		log "$base/$sdk: download failed, trying next mirror"
 	done
-	if [[ -z $verified ]]; then
-		[[ -n $got ]] || { [[ $channel == snapshot ]] && stale "SDK $sdk no longer exists upstream"; die "SDK $sdk not found upstream"; }
-		if [[ -n $actual ]]; then
-			[[ $channel == snapshot ]] && stale "SDK sha256 $actual != pinned $sdk_sha256 (replaced upstream)"
-			die "SDK sha256 $actual != pinned $sdk_sha256"
-		fi
-		die "failed to download SDK $sdk"
+	[[ -n $got ]] || { [[ $channel == snapshot ]] && stale "SDK $sdk no longer exists upstream"; die "SDK $sdk not found upstream"; }
+	[[ -n $downloaded ]] || die "failed to download SDK $sdk"
+	actual=$(sha256sum "$sdk_tar" | cut -d' ' -f1)
+	if [[ $actual != "$sdk_sha256" ]]; then
+		[[ $channel == snapshot ]] && stale "SDK sha256 $actual != pinned $sdk_sha256 (replaced upstream)"
+		die "SDK sha256 $actual != pinned $sdk_sha256"
 	fi
 	if [[ -n $cache ]]; then
 		mv "$sdk_tar" "$cache/$sdk"

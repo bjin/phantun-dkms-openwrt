@@ -21,7 +21,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 OPENWRT_KEY = REPO_ROOT / "keys" / "openwrt-8A8BC12F46B836C0F9CDB36F1D53D1877742E911.asc"
 APK_PUBKEY = REPO_ROOT / "keys" / "phantun-openwrt.pem"
 DOWNLOADS = "https://downloads.openwrt.org"
-ORIGIN = "https://mirror-03.infra.openwrt.org"
 RELEASE_MIRRORS = (
     "https://openwrt.pixeldeck.net",
     "https://ftp.halifax.rwth-aachen.de/openwrt",
@@ -244,8 +243,8 @@ def parse_sha256sums(text: str) -> dict[str, str]:
 def target_bases(channel: str, version: str, target: str) -> list[str]:
     if channel == "release":
         return [f"{h}/releases/{version}/targets/{target}/"
-                for h in (DOWNLOADS, *RELEASE_MIRRORS, ORIGIN, ARCHIVE)]
-    return [f"{h}/snapshots/targets/{target}/" for h in (DOWNLOADS, ORIGIN)]
+                for h in (DOWNLOADS, *RELEASE_MIRRORS, ARCHIVE)]
+    return [f"{DOWNLOADS}/snapshots/targets/{target}/"]
 
 
 def fetch_verified_sums(base: str) -> tuple[str, dict[str, str]]:
@@ -366,7 +365,7 @@ class Inconsistent(Exception):
 
 def fetch_versions() -> dict:
     last_err: Fatal | None = None
-    for host in (DOWNLOADS, *RELEASE_MIRRORS, ORIGIN):
+    for host in (DOWNLOADS, *RELEASE_MIRRORS):
         try:
             return json.loads(http_get(f"{host}/.versions.json"))
         except (NotFound, Fatal) as e:
@@ -379,7 +378,7 @@ def fetch_versions() -> dict:
 def fetch_release_targets(version: str) -> set[str] | None:
     """Targets listed in the release's .targets.json; None if not (yet) published."""
     last_err: Fatal | None = None
-    for host in (DOWNLOADS, *RELEASE_MIRRORS, ORIGIN, ARCHIVE):
+    for host in (DOWNLOADS, *RELEASE_MIRRORS, ARCHIVE):
         try:
             return set(json.loads(http_get(f"{host}/releases/{version}/.targets.json")))
         except NotFound:
