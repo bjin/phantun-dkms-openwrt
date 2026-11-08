@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import (  # noqa: E402
-    KERNEL_RE, Fatal, NotFound, fetch_verified_sums, http_get, log, target_bases,
+    KERNEL_RE, BadSignature, Fatal, NotFound, fetch_verified_sums, http_get, log, target_bases,
 )
 
 PROMPT = r"root@[^:\r\n]*:[^#\r\n]*# "
@@ -38,26 +38,42 @@ def image_name(version: str) -> str:
 def fetch_image(version: str, dest: Path) -> None:
     channel = "snapshot" if version == "SNAPSHOT" else "release"
     name = image_name(version)
+    gz = dest.with_name(name)
+    data: bytes | None = None
+    last_err: Fatal | None = None
     for base in target_bases(channel, version, TARGET):
         try:
             _, sums = fetch_verified_sums(base)
         except NotFound:
             continue
-        break
-    else:
-        raise Fatal(f"no sha256sums for {version} {TARGET}")
-    if name not in sums:
-        raise Fatal(f"{name} not listed in {base}sha256sums")
-    gz = dest.with_name(name)
-    if gz.is_file() and hashlib.sha256(gz.read_bytes()).hexdigest() == sums[name]:
-        log(f"reusing verified {gz}")
-        data = gz.read_bytes()
-    else:
+        except BadSignature:
+            raise
+        except Fatal as e:
+            last_err = e
+            log(f"{e}; trying next mirror")
+            continue
+        if name not in sums:
+            raise Fatal(f"{name} not listed in {base}sha256sums")
+        if gz.is_file() and hashlib.sha256(gz.read_bytes()).hexdigest() == sums[name]:
+            log(f"reusing verified {gz}")
+            data = gz.read_bytes()
+            break
         log(f"downloading {base}{name}")
-        data = http_get(base + name, timeout=600)
-        if hashlib.sha256(data).hexdigest() != sums[name]:
-            raise Fatal(f"{name}: sha256 mismatch against verified sha256sums")
-        gz.write_bytes(data)
+        try:
+            cand = http_get(base + name, timeout=600)
+        except (NotFound, Fatal) as e:
+            last_err = e if isinstance(e, Fatal) else Fatal(f"{base}{name}: 404")
+            log(f"{last_err}; trying next mirror")
+            continue
+        if hashlib.sha256(cand).hexdigest() != sums[name]:
+            last_err = Fatal(f"{name}: sha256 mismatch against verified sha256sums")
+            log(f"{last_err}; trying next mirror")
+            continue
+        gz.write_bytes(cand)
+        data = cand
+        break
+    if data is None:
+        raise last_err or Fatal(f"no sha256sums for {version} {TARGET}")
     # OpenWrt appends metadata after the gzip stream; decompress the first member only.
     d = zlib.decompressobj(wbits=31)
     dest.write_bytes(d.decompress(data) + d.flush())

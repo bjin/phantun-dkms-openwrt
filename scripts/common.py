@@ -21,6 +21,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 OPENWRT_KEY = REPO_ROOT / "keys" / "openwrt-8A8BC12F46B836C0F9CDB36F1D53D1877742E911.asc"
 APK_PUBKEY = REPO_ROOT / "keys" / "phantun-openwrt.pem"
 DOWNLOADS = "https://downloads.openwrt.org"
+ORIGIN = "https://mirror-03.infra.openwrt.org"
+RELEASE_MIRRORS = (
+    "https://openwrt.pixeldeck.net",
+    "https://ftp.halifax.rwth-aachen.de/openwrt",
+    "https://ftp.snt.utwente.nl/pub/software/openwrt",
+)
 ARCHIVE = "https://archive.openwrt.org"
 
 SCHEMA = 1
@@ -76,13 +82,15 @@ def _request(url: str, method: str, headers: dict | None) -> urllib.request.Requ
 
 
 def http_get(url: str, *, headers: dict | None = None, method: str = "GET",
-             attempts: int = 8, timeout: int = 60) -> bytes:
+             attempts: int = 5, timeout: int = 60) -> bytes:
     """GET with retries/backoff and byte-range resume. 404 raises NotFound; other 4xx raise Fatal."""
     delay = 2.0
     buf = bytearray()
     etag: str | None = None
     total: int | None = None
-    for attempt in range(1, attempts + 1):
+    stalled = 0
+    for attempt in range(1, 65):
+        prev_len = len(buf)
         req_headers = dict(headers or {})
         if method == "GET" and buf:
             req_headers["Range"] = f"bytes={len(buf)}-"
@@ -135,11 +143,17 @@ def http_get(url: str, *, headers: dict | None = None, method: str = "GET",
         except (urllib.error.URLError, http.client.HTTPException,
                 TimeoutError, ConnectionError, OSError) as e:
             err = str(e)
-        if attempt == attempts:
-            raise Fatal(f"{method} {url}: {err} (after {attempts} attempts)")
-        log(f"{method} {url}: {err} ({len(buf)} bytes); retry {attempt}/{attempts - 1} in {delay:.0f}s")
+        if len(buf) > prev_len:
+            stalled = 0
+            delay = 2.0
+        else:
+            stalled += 1
+        if stalled >= attempts or attempt == 64:
+            raise Fatal(f"{method} {url}: {err} (after {attempt} attempts)")
+        log(f"{method} {url}: {err} ({len(buf)} bytes); retry {attempt} in {delay:.0f}s")
         time.sleep(delay)
-        delay = min(delay * 2, 16.0)
+        if stalled:
+            delay = min(delay * 2, 16.0)
     raise AssertionError("unreachable")
 
 
@@ -229,9 +243,9 @@ def parse_sha256sums(text: str) -> dict[str, str]:
 
 def target_bases(channel: str, version: str, target: str) -> list[str]:
     if channel == "release":
-        return [f"{DOWNLOADS}/releases/{version}/targets/{target}/",
-                f"{ARCHIVE}/releases/{version}/targets/{target}/"]
-    return [f"{DOWNLOADS}/snapshots/targets/{target}/"]
+        return [f"{h}/releases/{version}/targets/{target}/"
+                for h in (DOWNLOADS, *RELEASE_MIRRORS, ORIGIN, ARCHIVE)]
+    return [f"{h}/snapshots/targets/{target}/" for h in (DOWNLOADS, ORIGIN)]
 
 
 def fetch_verified_sums(base: str) -> tuple[str, dict[str, str]]:
@@ -268,15 +282,31 @@ class Upstream:
 
     def _fetch_pin_once(self, channel: str, version: str, target: str) -> dict | None:
         what = f"{version} {target}"
+        last_err: Fatal | None = None
         for base in target_bases(channel, version, target):
             try:
                 profiles_raw = http_get(base + "profiles.json")
-                break
             except NotFound:
                 continue
-        else:
-            log(f"{what}: profiles.json 404 -> target absent")
-            return None
+            except Fatal as e:
+                last_err = e
+                log(f"{what}: {e}; trying next mirror")
+                continue
+            try:
+                return self._fetch_pin_from(base, channel, version, target, profiles_raw)
+            except (BadSignature, Inconsistent):
+                raise
+            except (NotFound, Fatal) as e:
+                last_err = e if isinstance(e, Fatal) else Fatal(f"GET {e}: 404")
+                log(f"{what}: {last_err}; trying next mirror")
+        if last_err is not None:
+            raise last_err
+        log(f"{what}: profiles.json 404 -> target absent")
+        return None
+
+    def _fetch_pin_from(self, base: str, channel: str, version: str, target: str,
+                        profiles_raw: bytes) -> dict:
+        what = f"{version} {target}"
         _, sums = fetch_verified_sums(base)
         sdk_lines = [(h, n) for n, h in sums.items()
                      if SDK_LINE_RE.match(f"{h} *{n}") and "/" not in n]
@@ -335,16 +365,30 @@ class Inconsistent(Exception):
 
 
 def fetch_versions() -> dict:
-    return json.loads(http_get(f"{DOWNLOADS}/.versions.json"))
+    last_err: Fatal | None = None
+    for host in (DOWNLOADS, *RELEASE_MIRRORS, ORIGIN):
+        try:
+            return json.loads(http_get(f"{host}/.versions.json"))
+        except (NotFound, Fatal) as e:
+            last_err = e if isinstance(e, Fatal) else Fatal(f"{host}/.versions.json: 404")
+            log(f"{last_err}; trying next mirror")
+    assert last_err is not None
+    raise last_err
 
 
 def fetch_release_targets(version: str) -> set[str] | None:
     """Targets listed in the release's .targets.json; None if not (yet) published."""
-    for host in (DOWNLOADS, ARCHIVE):
+    last_err: Fatal | None = None
+    for host in (DOWNLOADS, *RELEASE_MIRRORS, ORIGIN, ARCHIVE):
         try:
             return set(json.loads(http_get(f"{host}/releases/{version}/.targets.json")))
         except NotFound:
             continue
+        except Fatal as e:
+            last_err = e
+            log(f"{e}; trying next mirror")
+    if last_err is not None:
+        raise last_err
     return None
 
 

@@ -96,9 +96,15 @@ kernel_dep="kernel=$linux_version~$vermagic-r$linux_release"
 tgt=${target%/*} sub=${target#*/}
 if [[ $channel == release ]]; then
 	bases=("https://downloads.openwrt.org/releases/$version/targets/$target"
+		"https://openwrt.pixeldeck.net/releases/$version/targets/$target"
+		"https://ftp.halifax.rwth-aachen.de/openwrt/releases/$version/targets/$target"
+		"https://ftp.snt.utwente.nl/pub/software/openwrt/releases/$version/targets/$target"
+		"https://mirror-03.infra.openwrt.org/releases/$version/targets/$target"
 		"https://archive.openwrt.org/releases/$version/targets/$target")
 else
-	bases=("https://downloads.openwrt.org/snapshots/targets/$target")
+	bases=("https://downloads.openwrt.org/snapshots/targets/$target"
+		"https://mirror-03.infra.openwrt.org/snapshots/targets/$target"
+		"https://mirror.berlin.freifunk.net/downloads.openwrt.org/snapshots/targets/$target")
 fi
 started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 log "item $channel $version $target kernel $kernel -> kmod-phantun $apk_version"
@@ -116,24 +122,32 @@ on_exit() {
 }
 trap on_exit EXIT
 
-curl_get() { # url dest
-	local url=$1 dest=$2 attempt rc
-	rm -f "$dest"
-	for attempt in {1..10}; do
+curl_get() { # url dest [keep_partial]
+	local url=$1 dest=$2 keep=${3:-} attempt prev cur stalled=0 rc=0
+	[[ -n $keep ]] || rm -f "$dest"
+	for attempt in {1..60}; do
+		prev=$(stat -c %s "$dest" 2>/dev/null || echo 0)
 		rc=0
-		curl -fL -C - --connect-timeout 30 --speed-time 60 --speed-limit 1024 -sS -o "$dest" "$url" || rc=$?
+		curl --http1.1 -fL -C - --connect-timeout 30 --speed-time 60 --speed-limit 1024 -sS -o "$dest" "$url" || rc=$?
 		[[ $rc == 0 ]] && return 0
-		[[ $rc == 33 ]] && rm -f "$dest"
-		if [[ $attempt -lt 10 ]]; then
-			log "curl $url failed (exit $rc, $(stat -c %s "$dest" 2>/dev/null || echo 0) bytes); retry $attempt/9 in 5s"
-			sleep 5
+		if [[ $rc == 33 ]]; then
+			rm -f "$dest"
+			prev=0
 		fi
+		cur=$(stat -c %s "$dest" 2>/dev/null || echo 0)
+		if (( cur > prev )); then
+			stalled=0
+		else
+			(( ++stalled >= 3 )) && return "$rc"
+		fi
+		log "curl $url failed (exit $rc, $cur bytes); retry $attempt in 3s"
+		sleep 3
 	done
 	return "$rc"
 }
 
 http_status() { # url
-	curl -sS -o /dev/null -I -L --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 -w '%{http_code}' "$1"
+	curl --http1.1 -sS -o /dev/null -I -L --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 -w '%{http_code}' "$1"
 }
 
 # Step 2: download and verify the SDK.
@@ -142,23 +156,37 @@ if [[ -n $cache && -f $cache/$sdk ]] && echo "$sdk_sha256  $cache/$sdk" | sha256
 	log "using cached $cache/$sdk"
 	sdk_tar="$cache/$sdk"
 else
+	rm -f "$sdk_tar"
 	got=
+	verified=
+	actual=
 	for base in "${bases[@]}"; do
 		status=$(http_status "$base/$sdk")
 		if [[ $status == 404 ]]; then
 			log "$base/$sdk: 404"
 			continue
 		fi
-		log "downloading $base/$sdk"
-		curl_get "$base/$sdk" "$sdk_tar"
 		got=1
-		break
+		log "downloading $base/$sdk"
+		if ! curl_get "$base/$sdk" "$sdk_tar" keep; then
+			log "$base/$sdk: download failed, trying next mirror"
+			continue
+		fi
+		actual=$(sha256sum "$sdk_tar" | cut -d' ' -f1)
+		if [[ $actual == "$sdk_sha256" ]]; then
+			verified=1
+			break
+		fi
+		log "$base/$sdk: sha256 $actual != pinned $sdk_sha256"
+		rm -f "$sdk_tar"
 	done
-	[[ -n $got ]] || { [[ $channel == snapshot ]] && stale "SDK $sdk no longer exists upstream"; die "SDK $sdk not found upstream"; }
-	actual=$(sha256sum "$sdk_tar" | cut -d' ' -f1)
-	if [[ $actual != "$sdk_sha256" ]]; then
-		[[ $channel == snapshot ]] && stale "SDK sha256 $actual != pinned $sdk_sha256 (replaced upstream)"
-		die "SDK sha256 $actual != pinned $sdk_sha256"
+	if [[ -z $verified ]]; then
+		[[ -n $got ]] || { [[ $channel == snapshot ]] && stale "SDK $sdk no longer exists upstream"; die "SDK $sdk not found upstream"; }
+		if [[ -n $actual ]]; then
+			[[ $channel == snapshot ]] && stale "SDK sha256 $actual != pinned $sdk_sha256 (replaced upstream)"
+			die "SDK sha256 $actual != pinned $sdk_sha256"
+		fi
+		die "failed to download SDK $sdk"
 	fi
 	if [[ -n $cache ]]; then
 		mv "$sdk_tar" "$cache/$sdk"
