@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -75,26 +76,70 @@ def _request(url: str, method: str, headers: dict | None) -> urllib.request.Requ
 
 
 def http_get(url: str, *, headers: dict | None = None, method: str = "GET",
-             attempts: int = 5, timeout: int = 60) -> bytes:
-    """GET with retries/backoff. 404 raises NotFound at once; other 4xx raise Fatal at once."""
+             attempts: int = 8, timeout: int = 60) -> bytes:
+    """GET with retries/backoff and byte-range resume. 404 raises NotFound; other 4xx raise Fatal."""
     delay = 2.0
+    buf = bytearray()
+    etag: str | None = None
+    total: int | None = None
     for attempt in range(1, attempts + 1):
+        req_headers = dict(headers or {})
+        if method == "GET" and buf:
+            req_headers["Range"] = f"bytes={len(buf)}-"
+            if etag and not etag.startswith("W/"):
+                req_headers["If-Range"] = etag
         try:
-            with urllib.request.urlopen(_request(url, method, headers), timeout=timeout) as resp:
-                return resp.read()
+            with urllib.request.urlopen(_request(url, method, req_headers), timeout=timeout) as resp:
+                if resp.status == 206:
+                    cr = (resp.headers.get("Content-Range") or "").strip()
+                    m = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)", cr)
+                    if (not m or int(m.group(1)) != len(buf)
+                            or int(m.group(2)) < int(m.group(1))
+                            or int(m.group(2)) >= int(m.group(3))
+                            or (total is not None and int(m.group(3)) != total)):
+                        buf.clear()
+                        etag = None
+                        total = None
+                        raise http.client.HTTPException(f"bad Content-Range {cr!r}")
+                    end = int(m.group(2)) + 1
+                    total = int(m.group(3))
+                else:
+                    buf.clear()
+                    etag = resp.headers.get("ETag")
+                    total = resp.length if method != "HEAD" else None
+                    end = total
+                while chunk := resp.read(1 << 16):
+                    buf.extend(chunk)
+                if method != "HEAD" and resp.length:
+                    raise http.client.IncompleteRead(b"", resp.length)
+                if end is not None and len(buf) > end:
+                    buf.clear()
+                    etag = None
+                    total = None
+                    raise http.client.HTTPException(f"read {len(buf)} > {end} bytes")
+                if total is not None and len(buf) < total:
+                    raise http.client.IncompleteRead(b"", total - len(buf))
+                return bytes(buf)
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 raise NotFound(url) from None
-            if e.code < 500 and e.code != 429:
-                raise Fatal(f"GET {url}: HTTP {e.code}") from None
-            err = f"HTTP {e.code}"
-        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+            if e.code == 416 and buf:
+                buf.clear()
+                etag = None
+                total = None
+                err = "HTTP 416"
+            elif e.code < 500 and e.code != 429:
+                raise Fatal(f"{method} {url}: HTTP {e.code}") from None
+            else:
+                err = f"HTTP {e.code}"
+        except (urllib.error.URLError, http.client.HTTPException,
+                TimeoutError, ConnectionError, OSError) as e:
             err = str(e)
         if attempt == attempts:
             raise Fatal(f"{method} {url}: {err} (after {attempts} attempts)")
-        log(f"{method} {url}: {err}; retry {attempt}/{attempts - 1} in {delay:.0f}s")
+        log(f"{method} {url}: {err} ({len(buf)} bytes); retry {attempt}/{attempts - 1} in {delay:.0f}s")
         time.sleep(delay)
-        delay *= 2
+        delay = min(delay * 2, 16.0)
     raise AssertionError("unreachable")
 
 

@@ -117,11 +117,23 @@ on_exit() {
 trap on_exit EXIT
 
 curl_get() { # url dest
-	curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 -sS -o "$2" "$1"
+	local url=$1 dest=$2 attempt rc
+	rm -f "$dest"
+	for attempt in {1..10}; do
+		rc=0
+		curl -fL -C - --connect-timeout 30 --speed-time 60 --speed-limit 1024 -sS -o "$dest" "$url" || rc=$?
+		[[ $rc == 0 ]] && return 0
+		[[ $rc == 33 ]] && rm -f "$dest"
+		if [[ $attempt -lt 10 ]]; then
+			log "curl $url failed (exit $rc, $(stat -c %s "$dest" 2>/dev/null || echo 0) bytes); retry $attempt/9 in 5s"
+			sleep 5
+		fi
+	done
+	return "$rc"
 }
 
 http_status() { # url
-	curl -sS -o /dev/null -I -L --retry 5 --retry-delay 5 --connect-timeout 30 -w '%{http_code}' "$1"
+	curl -sS -o /dev/null -I -L --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 -w '%{http_code}' "$1"
 }
 
 # Step 2: download and verify the SDK.

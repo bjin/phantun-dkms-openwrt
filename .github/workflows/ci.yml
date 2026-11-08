@@ -38,6 +38,10 @@ concurrency:
   group: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'master' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+defaults:
+  run:
+    shell: bash
+
 env:
   APK_TOOLS_TAG: v3.0.5
   APK_TOOLS_COMMIT: b5a31c0d865342ad80be10d68f1bb3d3ad9b0866
