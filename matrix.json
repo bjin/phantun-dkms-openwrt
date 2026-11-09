@@ -176,10 +176,10 @@
   "snapshot": {
     "ath79/generic": {
       "sdk": "openwrt-sdk-ath79-generic_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "8f0e9bfb455e46458806130b9839a3c705ff8cd020e22d7680e17bc7e31b1a91",
-      "kernel": "6.18.60-1-63712150d7952426665cb36f5488feb4",
+      "sdk_sha256": "78a426960483caad720eb4d231fb092be68ca2a51426831660e765d07eb2f5a0",
+      "kernel": "6.18.60-1-f4f0103f1ae7a705f6892ca1c6ccbbd1",
       "arch": "mips_24kc",
-      "version_code": "r38178-7e8bfcfe76"
+      "version_code": "r38195-7edc67adad"
     },
     "bcm27xx/bcm2712": {
       "sdk": "openwrt-sdk-bcm27xx-bcm2712_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
@@ -197,31 +197,31 @@
     },
     "mediatek/filogic": {
       "sdk": "openwrt-sdk-mediatek-filogic_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "7b85d025cfdbe3206fcce40f0bb6770f744e0c5c9fd27fb4968528bf7526cb40",
+      "sdk_sha256": "5d24b8752bb20120df497932806f26e6eacac7591bd5a1924f22d3ea644bddbd",
       "kernel": "6.18.60-1-3f73a580a3f6d8fd6241b721d63bbd7d",
       "arch": "aarch64_cortex-a53",
-      "version_code": "r38178-7e8bfcfe76"
+      "version_code": "r38195-7edc67adad"
     },
     "mediatek/mt7622": {
       "sdk": "openwrt-sdk-mediatek-mt7622_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "e3460e9a0411786bed8de18d9a946353622ca0e375d94196564a5a50864fbe77",
+      "sdk_sha256": "e0eaee27d9d7b92aa5209ec92feb3642fb61558b07215442c17126f8eefde515",
       "kernel": "6.18.60-1-5c226bd64d423bbecfe368ab1c7bf0a3",
       "arch": "aarch64_cortex-a53",
-      "version_code": "r38178-7e8bfcfe76"
+      "version_code": "r38195-7edc67adad"
     },
     "qualcommax/ipq50xx": {
       "sdk": "openwrt-sdk-qualcommax-ipq50xx_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "a2437090079604c8accaef7776478f8ac4bb5295a7b75fa14d9765fd21c10f77",
+      "sdk_sha256": "e108f846dcf3e05a9c0d21daa7749986738d5c0504f1bd0875999e4ad53c4b00",
       "kernel": "6.18.60-1-445b517b0ed6daaa474b53dda7466054",
       "arch": "aarch64_cortex-a53",
-      "version_code": "r38178-7e8bfcfe76"
+      "version_code": "r38195-7edc67adad"
     },
     "qualcommax/ipq807x": {
       "sdk": "openwrt-sdk-qualcommax-ipq807x_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "592bf5ecd765fe17f4318c9d60b9a93b8a0245e33fe4900fd261de54262bda06",
+      "sdk_sha256": "57bfeb04194d71cb23be48588401f4a56b73205d63bf6df57896b4796ad0926b",
       "kernel": "6.18.60-1-c55dbaa61e222694b8c640736d35288a",
       "arch": "aarch64_cortex-a53",
-      "version_code": "r38178-7e8bfcfe76"
+      "version_code": "r38196-dd12789734"
     },
     "ramips/mt7621": {
       "sdk": "openwrt-sdk-ramips-mt7621_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
