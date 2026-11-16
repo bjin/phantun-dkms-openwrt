@@ -211,10 +211,10 @@
     },
     "qualcommax/ipq50xx": {
       "sdk": "openwrt-sdk-qualcommax-ipq50xx_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
-      "sdk_sha256": "9ea0214d1430579d04cdec0d66f0d37ce39349adc5dd2e3e64c3e80d0f788ec7",
-      "kernel": "6.18.60-1-4613d9fdcc6a5f62977f55790fb3ed4c",
+      "sdk_sha256": "0d4f63bd6a123509363d785c262563ac84fec7afee6a6c393926620b41fdb4c4",
+      "kernel": "6.18.60-1-6a50148d59d142fed2b65cdde409e0e3",
       "arch": "aarch64_cortex-a53",
-      "version_code": "r38253-e2ed57b957"
+      "version_code": "r38410-6e4f1cc204"
     },
     "qualcommax/ipq807x": {
       "sdk": "openwrt-sdk-qualcommax-ipq807x_gcc-14.4.0_musl.Linux-x86_64.tar.zst",
